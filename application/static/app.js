@@ -343,6 +343,8 @@ function closeProjector() { $('#projector').classList.add('hidden'); }
 
 // ---------------- 长按拖拽排序 ----------------
 let drag = null;
+let dragFrame = null;
+let lastMove = null;
 
 function onBoardPointerDown(e) {
   if (drag) return;
@@ -382,18 +384,31 @@ function onDocPointerMove(e) {
     return;
   }
   e.preventDefault();
+  lastMove = e;
+  if (!dragFrame) dragFrame = requestAnimationFrame(processReorder);
+}
+
+function processReorder() {
+  dragFrame = null;
+  if (!drag || !drag.active || !lastMove) return;
+  const e = lastMove;
+  // 靠近视口边缘自动滚动，方便拖到下面的位置
+  if (e.clientY < 120) window.scrollBy(0, -8);
+  else if (e.clientY > window.innerHeight - 120) window.scrollBy(0, 8);
   const el = document.elementFromPoint(e.clientX, e.clientY);
   const target = el && el.closest ? el.closest('.group-card') : null;
-  if (target && target !== drag.card) {
-    const rect = target.getBoundingClientRect();
-    const after = e.clientY > rect.top + rect.height / 2;
-    const parent = drag.card.parentNode;
-    const ref = after ? target.nextSibling : target;
-    if (drag.card !== ref) {
-      drag.card.remove();
-      if (ref) parent.insertBefore(drag.card, ref);
-      else parent.appendChild(drag.card);
-    }
+  if (!target || target === drag.card) return;
+  const rect = target.getBoundingClientRect();
+  const dx = e.clientX - (rect.left + rect.width / 2);
+  const dy = e.clientY - (rect.top + rect.height / 2);
+  // 网格布局：按指针相对目标中心的主轴决定插前还是插后（同行看水平，跨行看垂直）
+  const after = Math.abs(dx) > Math.abs(dy) ? dx > 0 : dy > 0;
+  const board = drag.card.parentNode;
+  const ref = after ? target.nextSibling : target;
+  if (drag.card !== ref) {
+    drag.card.remove();
+    if (ref) board.insertBefore(drag.card, ref);
+    else board.appendChild(drag.card);
   }
 }
 
@@ -409,6 +424,12 @@ function activateDrag(e) {
 function onDocPointerUp() {
   if (!drag) return;
   clearTimeout(drag.timer);
+  if (dragFrame) {
+    cancelAnimationFrame(dragFrame);
+    dragFrame = null;
+    processReorder();
+  }
+  lastMove = null;
   const wasActive = drag.active;
   const card = drag.card;
   drag = null;
