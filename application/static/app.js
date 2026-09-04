@@ -137,7 +137,7 @@ function renderHistory() {
   el.innerHTML = state.history.map(h => `
     <div class="hist-item">
       <span class="hist-delta ${h.delta > 0 ? 'pos' : 'neg'}">${h.delta > 0 ? '+' : ''}${h.delta}</span>
-      <span>${esc(h.group_name)}</span>
+      <span class="hist-group" title="${esc(h.group_name)}">${esc(h.group_name)}</span>
       <span class="hist-reason" title="${esc(h.reason)}">${esc(h.reason)}</span>
       <span class="hist-time">${esc(h.created_at.slice(5, 16))}</span>
     </div>`).join('');
