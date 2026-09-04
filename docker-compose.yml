@@ -1,0 +1,29 @@
+services:
+  app:
+    build: .
+    container_name: jiafen
+    restart: unless-stopped
+    environment:
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-jiafen123}
+      SECRET_KEY: ${SECRET_KEY:-}
+      PORT: "5000"
+    volumes:
+      - ./application/data:/app/application/data
+    networks:
+      - jiafen
+
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: jiafen-tunnel
+    restart: unless-stopped
+    depends_on:
+      - app
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN}
+    networks:
+      - jiafen
+
+networks:
+  jiafen:
+    driver: bridge

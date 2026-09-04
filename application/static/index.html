@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>课堂小组积分</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+  <!-- 登录 -->
+  <div id="login" class="hidden">
+    <div class="login-box">
+      <h1>课堂小组积分</h1>
+      <p class="muted">请输入管理密码</p>
+      <input type="password" id="login-pw" placeholder="密码" autocomplete="current-password">
+      <button id="login-btn" class="primary">进入</button>
+      <p id="login-err" class="err"></p>
+    </div>
+  </div>
+
+  <!-- 主界面 -->
+  <div id="app" class="hidden">
+    <header class="topbar">
+      <div class="brand">课堂小组积分</div>
+      <div class="actions">
+        <button id="btn-export" class="ghost">导出备份</button>
+        <button id="btn-import" class="ghost">导入备份</button>
+        <button id="btn-projector" class="ghost">投屏模式</button>
+        <button id="btn-logout" class="ghost danger-ghost">退出</button>
+      </div>
+    </header>
+    <input type="file" id="import-file" accept="application/json,.json" class="hidden">
+
+    <div class="layout">
+      <!-- 侧栏：班级 -->
+      <aside class="sidebar">
+        <div class="panel-head">班级</div>
+        <div class="new-class">
+          <input type="text" id="class-name" placeholder="新建班级…">
+          <button id="btn-add-class" class="primary">＋</button>
+        </div>
+        <div id="class-list" class="class-list"></div>
+      </aside>
+
+      <!-- 主区：记分板 -->
+      <main class="main">
+        <div class="board-head">
+          <h2 id="current-class-name" class="board-title">请选择班级</h2>
+          <div class="board-actions">
+            <button id="btn-add-group" class="ghost">＋ 添加小组</button>
+            <button id="btn-reset" class="ghost danger-ghost">清零本班分数</button>
+          </div>
+        </div>
+        <div id="board" class="board"></div>
+      </main>
+
+      <!-- 右侧：排行 + 记录 -->
+      <aside class="right">
+        <div class="panel">
+          <div class="panel-head">排行榜</div>
+          <div id="leaderboard" class="leaderboard"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head">
+            记分记录
+            <button id="btn-undo" class="ghost" style="margin-left:auto;">撤销上一条</button>
+          </div>
+          <div id="history" class="history"></div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <!-- 投屏模式 -->
+  <div id="projector" class="hidden">
+    <button id="projector-close" class="close-btn">✕ 退出投屏</button>
+    <div class="projector-title" id="projector-title">课堂小组积分</div>
+    <div id="projector-board" class="projector-board"></div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
