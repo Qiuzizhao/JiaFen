@@ -385,34 +385,14 @@ function onDocPointerMove(e) {
   const el = document.elementFromPoint(e.clientX, e.clientY);
   const target = el && el.closest ? el.closest('.group-card') : null;
   if (target && target !== drag.card) {
-    const board = drag.card.parentNode;
-    const before = {};
-    Array.from(board.querySelectorAll('.group-card')).forEach(c => {
-      before[c.dataset.gid] = c.getBoundingClientRect();
-    });
     const rect = target.getBoundingClientRect();
     const after = e.clientY > rect.top + rect.height / 2;
+    const parent = drag.card.parentNode;
     const ref = after ? target.nextSibling : target;
     if (drag.card !== ref) {
       drag.card.remove();
-      if (ref) board.insertBefore(drag.card, ref);
-      else board.appendChild(drag.card);
-      // FLIP：让其他卡片平滑让位滑动
-      Array.from(board.querySelectorAll('.group-card')).forEach(c => {
-        if (c === drag.card) return;
-        const o = before[c.dataset.gid];
-        if (!o) return;
-        const n = c.getBoundingClientRect();
-        const dx = o.left - n.left;
-        const dy = o.top - n.top;
-        if (dx || dy) {
-          c.style.transition = 'none';
-          c.style.transform = `translate(${dx}px, ${dy}px)`;
-          void c.offsetWidth;
-          c.style.transition = 'transform 200ms ease';
-          c.style.transform = '';
-        }
-      });
+      if (ref) parent.insertBefore(drag.card, ref);
+      else parent.appendChild(drag.card);
     }
   }
 }
@@ -435,10 +415,6 @@ function onDocPointerUp() {
   state.dragActive = false;
   const board = $('#board');
   if (board) board.classList.remove('reordering');
-  if (board) Array.from(board.querySelectorAll('.group-card')).forEach(c => {
-    c.style.transition = '';
-    c.style.transform = '';
-  });
   if (card) card.classList.remove('dragging');
   if (wasActive) commitOrder();
 }
