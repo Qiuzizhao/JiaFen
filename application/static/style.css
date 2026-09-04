@@ -108,12 +108,20 @@ input:focus { outline: none; border-color: var(--brand); }
 }
 @media (max-width: 1100px) {
   .layout { grid-template-columns: 220px 1fr; }
-  .right { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .right { grid-column: 1 / -1; flex-direction: row; }
+  .right .panel { flex: 1 1 0; min-width: 0; }
 }
 @media (max-width: 720px) {
   .layout { grid-template-columns: 1fr; }
   .sidebar { order: 2; }
   .main { order: 1; }
+}
+
+.right {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
 }
 
 .sidebar, .right .panel, .main {
