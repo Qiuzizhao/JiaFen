@@ -60,6 +60,7 @@ def init_db():
             name TEXT NOT NULL,
             color TEXT NOT NULL DEFAULT '#5B9BD5',
             score INTEGER NOT NULL DEFAULT 0,
+            sort_order INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
         );
 
@@ -73,6 +74,18 @@ def init_db():
         );
         """
     )
+    # 迁移：老库补 sort_order 列，并按原顺序回填
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(groups)").fetchall()]
+    if "sort_order" not in cols:
+        conn.execute("ALTER TABLE groups ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")
+        conn.execute(
+            """
+            UPDATE groups SET sort_order = (
+                SELECT COUNT(*) FROM groups g2
+                WHERE g2.class_id = groups.class_id AND g2.id <= groups.id
+            )
+            """
+        )
     conn.commit()
     conn.close()
 
@@ -189,7 +202,7 @@ def list_classes():
     result = []
     for c in classes:
         groups = db.execute(
-            "SELECT * FROM groups WHERE class_id=? ORDER BY score DESC, id", (c["id"],)
+            "SELECT * FROM groups WHERE class_id=? ORDER BY sort_order ASC, id", (c["id"],)
         ).fetchall()
         result.append({**dict(c), "groups": [dict(g) for g in groups]})
     return jsonify(result)
@@ -257,11 +270,30 @@ def create_group(cid):
         return jsonify({"error": "小组名称不能为空"}), 400
     db = get_db()
     cur = db.execute(
-        "INSERT INTO groups(class_id, name, color) VALUES(?,?,?)", (cid, name, color)
+        "INSERT INTO groups(class_id, name, color, sort_order) "
+        "VALUES(?,?,?,(SELECT COALESCE(MAX(sort_order),0)+1 FROM groups WHERE class_id=?))",
+        (cid, name, color, cid),
     )
     db.commit()
     broadcast()
     return jsonify({"id": cur.lastrowid})
+
+
+@app.route("/api/classes/<int:cid>/groups/reorder", methods=["POST"])
+@login_required
+def reorder_groups(cid):
+    data = request.get_json(silent=True) or {}
+    order = data.get("order", [])
+    db = get_db()
+    rows = db.execute("SELECT id FROM groups WHERE class_id=?", (cid,)).fetchall()
+    valid = {r["id"] for r in rows}
+    if not order or set(order) != valid:
+        return jsonify({"error": "排序数据与小组不匹配"}), 400
+    for idx, gid in enumerate(order):
+        db.execute("UPDATE groups SET sort_order=? WHERE id=?", (idx, gid))
+    db.commit()
+    broadcast()
+    return jsonify({"ok": True})
 
 
 @app.route("/api/groups/<int:gid>", methods=["PATCH"])

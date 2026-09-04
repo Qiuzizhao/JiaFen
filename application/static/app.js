@@ -7,6 +7,8 @@ const state = {
   classes: [],
   currentClassId: null,
   history: [],
+  dragActive: false,
+  pendingRefresh: false,
 };
 
 function esc(s) {
@@ -72,10 +74,11 @@ function renderSidebar() {
 function groupCard(g) {
   const q = [[1, '+1'], [2, '+2'], [5, '+5'], [-1, '-1'], [-2, '-2'], [-5, '-5']];
   return `
-  <div class="group-card" style="--c:${esc(g.color)}">
+  <div class="group-card" data-gid="${g.id}" style="--c:${esc(g.color)}">
     <div class="group-head">
       <span class="dot"></span>
       <span class="gname" title="${esc(g.name)}">${esc(g.name)}</span>
+      <button class="icon-btn drag-handle" drag-gid="${g.id}" title="长按拖拽调整顺序">☰</button>
       <button class="icon-btn" onclick="renameGroup(${g.id})">✎</button>
       <button class="icon-btn danger" onclick="delGroup(${g.id})">✕</button>
     </div>
@@ -88,7 +91,6 @@ function groupCard(g) {
         <input type="number" id="amount-${g.id}" class="amount" placeholder="分值">
         <button onclick="applyCustom(${g.id})">记分</button>
       </div>
-      <input type="text" id="reason-${g.id}" placeholder="备注原因（可选）">
     </div>
   </div>`;
 }
@@ -138,7 +140,7 @@ function renderHistory() {
     <div class="hist-item">
       <span class="hist-delta ${h.delta > 0 ? 'pos' : 'neg'}">${h.delta > 0 ? '+' : ''}${h.delta}</span>
       <span class="hist-group" title="${esc(h.group_name)}">${esc(h.group_name)}</span>
-      <span class="hist-reason" title="${esc(h.reason)}">${esc(h.reason)}</span>
+      ${h.reason ? `<span class="hist-reason" title="${esc(h.reason)}">${esc(h.reason)}</span>` : ''}
       <span class="hist-time">${esc(h.created_at.slice(5, 16))}</span>
     </div>`).join('');
 }
@@ -161,6 +163,7 @@ function renderProjector() {
 let refreshing = false;
 async function refresh() {
   if (refreshing) return;
+  if (state.dragActive) { state.pendingRefresh = true; return; }
   refreshing = true;
   try {
     const [classes, history] = await Promise.all([
@@ -186,13 +189,11 @@ async function addScore(gid, delta, reason = '') {
 }
 function applyCustom(gid) {
   const amt = $('#amount-' + gid).value.trim();
-  const reason = $('#reason-' + gid).value.trim();
   if (!amt) { alert('请输入分值'); return; }
   const v = parseInt(amt, 10);
   if (isNaN(v) || v === 0) { alert('请输入有效的分值'); return; }
-  addScore(gid, v, reason);
+  addScore(gid, v);
   $('#amount-' + gid).value = '';
-  $('#reason-' + gid).value = '';
 }
 async function doUndo() {
   try {
@@ -340,6 +341,101 @@ function openProjector() {
 }
 function closeProjector() { $('#projector').classList.add('hidden'); }
 
+// ---------------- 长按拖拽排序 ----------------
+let drag = null;
+
+function onBoardPointerDown(e) {
+  if (drag) return;
+  const handle = e.target.closest('.drag-handle');
+  if (!handle) return;
+  e.preventDefault();
+  const card = handle.closest('.group-card');
+  if (!card) return;
+  drag = {
+    card,
+    gid: Number(card.dataset.gid),
+    startX: e.clientX,
+    startY: e.clientY,
+    active: false,
+    armed: false,
+    timer: null,
+    type: e.pointerType,
+  };
+  if (e.pointerType === 'touch') {
+    drag.timer = setTimeout(() => { if (drag && !drag.active) drag.armed = true; }, 380);
+  }
+}
+
+function onDocPointerMove(e) {
+  if (!drag) return;
+  const dx = e.clientX - drag.startX;
+  const dy = e.clientY - drag.startY;
+  if (!drag.active) {
+    if (Math.hypot(dx, dy) > 8) {
+      if (drag.type === 'mouse' || drag.armed) {
+        activateDrag(e);
+      } else {
+        clearTimeout(drag.timer);
+        drag = null;
+      }
+    }
+    return;
+  }
+  e.preventDefault();
+  const el = document.elementFromPoint(e.clientX, e.clientY);
+  const target = el && el.closest ? el.closest('.group-card') : null;
+  if (target && target !== drag.card) {
+    const rect = target.getBoundingClientRect();
+    const after = e.clientY > rect.top + rect.height / 2;
+    const parent = drag.card.parentNode;
+    const ref = after ? target.nextSibling : target;
+    if (drag.card !== ref) {
+      drag.card.remove();
+      if (ref) parent.insertBefore(drag.card, ref);
+      else parent.appendChild(drag.card);
+    }
+  }
+}
+
+function activateDrag(e) {
+  drag.active = true;
+  drag.card.classList.add('dragging');
+  state.dragActive = true;
+  const board = $('#board');
+  if (board) board.classList.add('reordering');
+  try { drag.card.setPointerCapture(e.pointerId); } catch (_) {}
+}
+
+function onDocPointerUp() {
+  if (!drag) return;
+  clearTimeout(drag.timer);
+  const wasActive = drag.active;
+  const card = drag.card;
+  drag = null;
+  state.dragActive = false;
+  const board = $('#board');
+  if (board) board.classList.remove('reordering');
+  if (card) card.classList.remove('dragging');
+  if (wasActive) commitOrder();
+}
+
+async function commitOrder() {
+  const cid = state.currentClassId;
+  if (!cid) return;
+  const ids = Array.from(document.querySelectorAll('#board .group-card')).map(c => Number(c.dataset.gid));
+  const cls = getCurrentClass();
+  const curIds = (cls && cls.groups) ? cls.groups.map(g => g.id) : [];
+  if (ids.length && ids.length === curIds.length && ids.every((v, i) => v === curIds[i])) {
+    if (state.pendingRefresh) { state.pendingRefresh = false; refresh(); }
+    return;
+  }
+  try {
+    await api(`/api/classes/${cid}/groups/reorder`, { method: 'POST', body: { order: ids } });
+  } catch (e) { alert(e.message); }
+  if (state.pendingRefresh) state.pendingRefresh = false;
+  refresh();
+}
+
 // ---------------- 绑定 ----------------
 document.addEventListener('DOMContentLoaded', () => {
   $('#login-btn').addEventListener('click', doLogin);
@@ -355,5 +451,9 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#import-file').addEventListener('change', handleImportFile);
   $('#btn-projector').addEventListener('click', openProjector);
   $('#projector-close').addEventListener('click', closeProjector);
+  $('#board').addEventListener('pointerdown', onBoardPointerDown);
+  document.addEventListener('pointermove', onDocPointerMove);
+  document.addEventListener('pointerup', onDocPointerUp);
+  document.addEventListener('pointercancel', onDocPointerUp);
   init();
 });
