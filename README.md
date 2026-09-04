@@ -39,9 +39,9 @@ python application/app.py
 
 数据保存在 `application/data/jiafen.db`，删除该文件即清空数据。
 
-## 部署到云服务器（Cloudflare Tunnel）
+## 部署到云服务器（nginx 反向代理 + Cloudflare）
 
-前提：你有一台云服务器 + 一个在 Cloudflare 管理的域名。
+前提：一台有公网 IP 的云服务器 + 一个在 Cloudflare 管理的域名，且服务器上已有 nginx（默认监听 80 端口）。
 
 ### 第 1 步：服务器装 Docker
 
@@ -51,45 +51,63 @@ Ubuntu / Debian：
 curl -fsSL https://get.docker.com | sh
 ```
 
-### 第 2 步：上传项目
+### 第 2 步：上传项目 + 配置
 
-把本项目上传到服务器（如 `/srv/jiafen`），可以用 `git clone` 或 `scp`。
-
-### 第 3 步：配置 Cloudflare Tunnel
-
-1. 登录 Cloudflare 后台 → **Networks** → **Tunnels** → **Create a tunnel**
-2. 选 Cloudflare Tunnel，起个名字，创建
-3. 记录下生成的 Token（`TUNNEL_TOKEN`）
-4. 添加 **Public Hostname**：
-   - 域名：`你的域名`（如 `jiafen.example.com`）
-   - 服务：`HTTP` → `app:5000`
-5. **保存**，这样 Cloudflare 就会把这个域名路由到服务器的 `app` 容器
-
-> 使用 Tunnel 后，服务器**不需要**开放 80/443 端口，也不用做 DNS A 记录。
-
-### 第 4 步：填配置并启动
+把本项目上传到服务器（如 `/srv/jiafen`），然后：
 
 ```bash
 cp .env.example .env
 ```
 
-编辑 `.env`，填入：
+编辑 `.env`，填好：
 
 - `ADMIN_PASSWORD`：你的登录密码
 - `SECRET_KEY`：一长串随机字符（可用 `openssl rand -hex 32` 生成）
-- `TUNNEL_TOKEN`：上一步拿到的 Cloudflare Tunnel Token
 
-然后启动：
+### 第 3 步：启动应用
 
 ```bash
-docker compose up -d
+cd /srv/jiafen && docker compose up -d --build
 ```
 
-看到两个容器运行（`jiafen` 和 `jiafen-tunnel`）就成功了。
+应用会映射到服务器的 `127.0.0.1:5002`（只本机可访问，供 nginx 反代）。
 
-### 第 5 步：访问
+### 第 4 步：配置 nginx 反代
 
-浏览器打开 `https://你的域名`，用 `.env` 里设置的管理密码登录即可。
+在 `/etc/nginx/sites-enabled/jiafen` 写入下面内容（把 `jiafen.example.com` 换成你的域名）：
+
+```nginx
+server {
+    listen 80;
+    server_name jiafen.example.com;
+    client_max_body_size 20m;
+    location / {
+        proxy_pass http://127.0.0.1:5002;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_connect_timeout 15s;
+        proxy_send_timeout 300s;
+        proxy_read_timeout 300s;
+    }
+}
+```
+
+```bash
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+> `proxy_buffering off` 很关键：否则 Server-Sent Events 实时推送会被缓冲。
+
+### 第 5 步：Cloudflare DNS
+
+在 Cloudflare 里把子域名加一条 **A 记录**指向服务器公网 IP，并打开**代理（橙色云朵）**；SSL 模式设成 **Flexible**（Cloudflare 在边缘做 HTTPS，回源走 HTTP 到服务器 80）。
+
+浏览器打开 `https://你的域名` 即可。
 
 ## 常用命令
 
