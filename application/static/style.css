@@ -31,6 +31,7 @@ button {
   cursor: pointer;
   border: none;
   border-radius: 10px;
+  touch-action: manipulation;
   transition: transform .05s ease, background .15s ease, box-shadow .15s ease;
 }
 button:active { transform: translateY(1px); }
@@ -62,6 +63,7 @@ input {
   font-size: 14px;
   background: #fff;
   color: var(--text);
+  touch-action: manipulation;
 }
 input:focus { outline: none; border-color: var(--brand); }
 
@@ -77,7 +79,7 @@ input:focus { outline: none; border-color: var(--brand); }
   padding: 40px 36px;
   border-radius: 20px;
   box-shadow: var(--shadow);
-  width: 340px;
+  width: min(340px, 92vw);
   text-align: center;
 }
 .login-box h1 { margin: 0 0 6px; font-size: 24px; }
@@ -111,10 +113,35 @@ input:focus { outline: none; border-color: var(--brand); }
   .right { grid-column: 1 / -1; flex-direction: row; }
   .right .panel { flex: 1 1 0; min-width: 0; }
 }
+/* 移动端班级切换下拉（桌面端隐藏）；在 720px 媒体查询中显示 */
+.mobile-class-select { display: none; }
 @media (max-width: 720px) {
-  .layout { grid-template-columns: 1fr; }
+  .layout { grid-template-columns: 1fr; gap: 12px; padding: 12px; }
   .sidebar { order: 2; }
   .main { order: 1; }
+  .right { order: 3; flex-direction: column; }
+  .right .panel { flex: none; }
+  .topbar { padding: 10px 14px; gap: 8px; }
+  .brand { font-size: 16px; }
+  .actions { width: 100%; justify-content: flex-start; flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 4px; }
+  .actions .ghost { padding: 8px 12px; font-size: 13px; white-space: nowrap; flex: none; }
+  .main, .sidebar, .right .panel { padding: 12px; }
+  .main { min-height: 0; }
+  .board-head { flex-direction: column; align-items: stretch; gap: 8px; }
+  .board { grid-template-columns: 1fr; gap: 12px; }
+  .gscore { font-size: 34px; }
+  input, .custom input { font-size: 16px; }
+  .icon-btn { width: 32px; height: 32px; font-size: 16px; }
+  .drag-handle { font-size: 18px; }
+  .qbtn { padding: 10px 0; font-size: 15px; }
+  .class-list .class-item .tools { opacity: 1; visibility: visible; pointer-events: auto; }
+  .mobile-class-select { display: block; width: 100%; margin-bottom: 12px; font-size: 16px; padding: 12px; }
+  .history { max-height: 320px; }
+}
+
+/* 触屏/粗指针设备（无 hover）：始终显示班级条目的编辑/删除按钮 */
+@media (hover: none), (pointer: coarse) {
+  .class-list .class-item .tools { opacity: 1; visibility: visible; pointer-events: auto; }
 }
 
 .right {

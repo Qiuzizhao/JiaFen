@@ -71,6 +71,14 @@ function renderSidebar() {
   });
 }
 
+function renderMobileClassSelect() {
+  const sel = $('#mobile-class-select');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">请选择班级</option>' + state.classes.map(c =>
+    `<option value="${c.id}"${c.id === state.currentClassId ? ' selected' : ''}>${esc(c.name)}</option>`
+  ).join('');
+}
+
 function groupCard(g) {
   const q = [[1, '+1'], [2, '+2'], [5, '+5'], [-1, '-1'], [-2, '-2'], [-5, '-5']];
   return `
@@ -173,6 +181,7 @@ async function refresh() {
     state.classes = classes;
     state.history = history;
     renderSidebar();
+    renderMobileClassSelect();
     renderBoard();
     renderLeaderboard();
     renderHistory();
@@ -464,6 +473,13 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#btn-logout').addEventListener('click', doLogout);
   $('#btn-add-class').addEventListener('click', createClass);
   $('#class-name').addEventListener('keydown', e => { if (e.key === 'Enter') createClass(); });
+  $('#mobile-class-select').addEventListener('change', e => {
+    const v = e.target.value;
+    if (!v) return;
+    state.currentClassId = Number(v);
+    saveSel();
+    refresh();
+  });
   $('#btn-add-group').addEventListener('click', createGroup);
   $('#btn-reset').addEventListener('click', doReset);
   $('#btn-undo').addEventListener('click', doUndo);
