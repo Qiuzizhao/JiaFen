@@ -46,6 +46,16 @@ function showApp() {
   $('#app').classList.remove('hidden');
 }
 
+// 移动端班级弹窗（桌面端这些函数为空操作）
+function openMobileClassPanel() {
+  $('#class-backdrop').classList.add('open');
+  document.querySelector('.sidebar').classList.add('open');
+}
+function closeMobileClassPanel() {
+  $('#class-backdrop').classList.remove('open');
+  document.querySelector('.sidebar').classList.remove('open');
+}
+
 // ---------------- 渲染 ----------------
 function renderSidebar() {
   const el = $('#class-list');
@@ -67,6 +77,7 @@ function renderSidebar() {
       state.currentClassId = Number(item.dataset.id);
       saveSel();
       refresh();
+      closeMobileClassPanel();
     });
   });
 }
@@ -232,6 +243,7 @@ async function createClass() {
     state.currentClassId = res.id;
     saveSel();
     await refresh();
+    closeMobileClassPanel();
   } catch (e) { alert(e.message); }
 }
 async function renameClass(id) {
@@ -480,6 +492,9 @@ document.addEventListener('DOMContentLoaded', () => {
     saveSel();
     refresh();
   });
+  $('#btn-classes').addEventListener('click', openMobileClassPanel);
+  $('#btn-class-close').addEventListener('click', closeMobileClassPanel);
+  $('#class-backdrop').addEventListener('click', closeMobileClassPanel);
   $('#btn-add-group').addEventListener('click', createGroup);
   $('#btn-reset').addEventListener('click', doReset);
   $('#btn-undo').addEventListener('click', doUndo);

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>课堂小组积分</title>
-  <link rel="stylesheet" href="/style.css?v=20260906">
+  <link rel="stylesheet" href="/style.css?v=20260907">
 </head>
 <body>
 
@@ -24,6 +24,7 @@
     <header class="topbar">
       <div class="brand">课堂小组积分</div>
       <div class="actions">
+        <button id="btn-classes" class="ghost">班级</button>
         <button id="btn-export" class="ghost">导出备份</button>
         <button id="btn-import" class="ghost">导入备份</button>
         <button id="btn-projector" class="ghost">投屏模式</button>
@@ -35,7 +36,7 @@
     <div class="layout">
       <!-- 侧栏：班级 -->
       <aside class="sidebar">
-        <div class="panel-head">班级</div>
+        <div class="panel-head">班级 <button id="btn-class-close" class="icon-btn class-close" aria-label="关闭">✕</button></div>
         <div class="new-class">
           <input type="text" id="class-name" placeholder="新建班级…">
           <button id="btn-add-class" class="primary">＋</button>
@@ -73,6 +74,9 @@
     </div>
   </div>
 
+  <!-- 移动端班级弹窗背景 -->
+  <div id="class-backdrop" class="class-backdrop"></div>
+
   <!-- 投屏模式 -->
   <div id="projector" class="hidden">
     <button id="projector-close" class="close-btn">✕ 退出投屏</button>
@@ -80,6 +84,6 @@
     <div id="projector-board" class="projector-board"></div>
   </div>
 
-  <script src="/app.js?v=20260906"></script>
+  <script src="/app.js?v=20260907"></script>
 </body>
 </html>
