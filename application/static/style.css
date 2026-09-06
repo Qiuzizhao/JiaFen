@@ -137,6 +137,13 @@ input:focus { outline: none; border-color: var(--brand); }
   .class-list .class-item .tools { opacity: 1; visibility: visible; pointer-events: auto; }
   .mobile-class-select { display: block; width: 100%; margin-bottom: 12px; font-size: 16px; padding: 12px; }
   .history { max-height: 320px; }
+  #projector { padding: 14px 12px; }
+  .projector-title { font-size: 22px; margin-bottom: 14px; padding: 0 40px; }
+  .projector-board { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .proj-card { padding: 14px; border-radius: 14px; }
+  .proj-card .p-name { font-size: 18px; }
+  .proj-card .p-score { font-size: 44px; margin-top: 4px; }
+  .close-btn { top: 12px; right: 14px; padding: 8px 12px; font-size: 14px; }
 }
 
 /* 触屏/粗指针设备（无 hover）：始终显示班级条目的编辑/删除按钮 */
@@ -261,10 +268,14 @@ input:focus { outline: none; border-color: var(--brand); }
 .projector-title { font-size: 30px; font-weight: 800; text-align: center; margin-bottom: 24px; }
 .projector-board {
   flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 20px;
   align-content: start;
+  padding-bottom: 8px;
 }
 .proj-card {
   background: rgba(255,255,255,.06);
