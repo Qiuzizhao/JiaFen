@@ -298,3 +298,10 @@ input:focus { outline: none; border-color: var(--brand); }
   box-shadow: 0 12px 26px rgba(17, 24, 39, .18);
 }
 #board.reordering { touch-action: none; }
+
+/* 防止移动端输入框聚焦时 iOS 自动放大整个页面：移动端所有输入元素字号 >= 16px */
+html { -webkit-text-size-adjust: 100%; }
+@media (max-width: 720px) {
+  input, select, textarea { font-size: 16px; }
+  .custom input, .custom input.amount { font-size: 16px; }
+}
