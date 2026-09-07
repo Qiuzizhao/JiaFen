@@ -116,7 +116,7 @@ input:focus { outline: none; border-color: var(--brand); }
 /* 移动端班级切换下拉（桌面端隐藏）；在 720px 媒体查询中显示 */
 .mobile-class-select { display: none; }
 /* 移动端：班级弹窗相关（桌面端隐藏） */
-.btn-classes { display: none; }
+#btn-classes { display: none; }
 .class-close { display: none; margin-left: auto; }
 .class-backdrop { display: none; }
 @media (max-width: 720px) {
