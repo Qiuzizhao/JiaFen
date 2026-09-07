@@ -31,6 +31,7 @@ button {
   cursor: pointer;
   border: none;
   border-radius: 10px;
+  touch-action: manipulation;
   transition: transform .05s ease, background .15s ease, box-shadow .15s ease;
 }
 button:active { transform: translateY(1px); }
@@ -62,6 +63,7 @@ input {
   font-size: 14px;
   background: #fff;
   color: var(--text);
+  touch-action: manipulation;
 }
 input:focus { outline: none; border-color: var(--brand); }
 
@@ -77,7 +79,7 @@ input:focus { outline: none; border-color: var(--brand); }
   padding: 40px 36px;
   border-radius: 20px;
   box-shadow: var(--shadow);
-  width: 340px;
+  width: min(340px, 92vw);
   text-align: center;
 }
 .login-box h1 { margin: 0 0 6px; font-size: 24px; }
@@ -111,10 +113,64 @@ input:focus { outline: none; border-color: var(--brand); }
   .right { grid-column: 1 / -1; flex-direction: row; }
   .right .panel { flex: 1 1 0; min-width: 0; }
 }
+/* 移动端班级切换下拉（桌面端隐藏）；在 720px 媒体查询中显示 */
+.mobile-class-select { display: none; }
+/* 移动端：班级弹窗相关（桌面端隐藏） */
+.btn-classes { display: none; }
+.class-close { display: none; margin-left: auto; }
+.class-backdrop { display: none; }
 @media (max-width: 720px) {
-  .layout { grid-template-columns: 1fr; }
+  .layout { grid-template-columns: 1fr; gap: 12px; padding: 12px; }
   .sidebar { order: 2; }
   .main { order: 1; }
+  .right { order: 3; flex-direction: column; }
+  .right .panel { flex: none; }
+  .topbar { padding: 10px 14px; gap: 8px; }
+  .brand { font-size: 16px; }
+  .actions { width: 100%; justify-content: flex-start; flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 4px; }
+  .actions .ghost { padding: 8px 12px; font-size: 13px; white-space: nowrap; flex: none; }
+  .main, .sidebar, .right .panel { padding: 12px; }
+  .main { min-height: 0; }
+  .board-head { flex-direction: column; align-items: stretch; gap: 8px; }
+  .board { grid-template-columns: 1fr; gap: 12px; }
+  .gscore { font-size: 34px; }
+  input, .custom input { font-size: 16px; }
+  .icon-btn { width: 32px; height: 32px; font-size: 16px; }
+  .drag-handle { font-size: 18px; }
+  .qbtn { padding: 10px 0; font-size: 15px; }
+  .class-list .class-item .tools { opacity: 1; visibility: visible; pointer-events: auto; }
+  .mobile-class-select { display: block; width: 100%; margin-bottom: 12px; font-size: 16px; padding: 12px; }
+  .history { max-height: 320px; }
+  #projector { padding: 14px 12px; }
+  .projector-title { font-size: 22px; margin-bottom: 14px; padding: 0 40px; }
+  .projector-board { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .proj-card { padding: 14px; border-radius: 14px; }
+  .proj-card .p-name { font-size: 18px; }
+  .proj-card .p-score { font-size: 44px; margin-top: 4px; }
+  .close-btn { top: 12px; right: 14px; padding: 8px 12px; font-size: 14px; }
+  /* 顶部操作：隐藏导出/导入；显示“班级”按钮 */
+  #btn-classes { display: inline-flex; }
+  #btn-export, #btn-import { display: none; }
+  .class-close { display: inline-flex; }
+  /* 班级板块改为点击按钮后弹出的窗口 */
+  .sidebar {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    margin: 0;
+    max-height: 82vh;
+    overflow-y: auto;
+    z-index: 60;
+    border-radius: 0 0 var(--radius) var(--radius);
+    box-shadow: 0 12px 30px rgba(0,0,0,.22);
+  }
+  .sidebar.open { display: block; }
+  .class-backdrop.open { display: block; position: fixed; inset: 0; z-index: 55; background: rgba(0,0,0,.45); }
+}
+
+/* 触屏/粗指针设备（无 hover）：始终显示班级条目的编辑/删除按钮 */
+@media (hover: none), (pointer: coarse) {
+  .class-list .class-item .tools { opacity: 1; visibility: visible; pointer-events: auto; }
 }
 
 .right {
@@ -145,6 +201,7 @@ input:focus { outline: none; border-color: var(--brand); }
 .class-item {
   display: flex; align-items: center; justify-content: space-between;
   padding: 10px 12px;
+  min-height: 46px; /* 固定高度，防止 hover 显示操作按钮时改变行高导致整页抖动/闪烁 */
   border-radius: 10px;
   cursor: pointer;
   background: #f6f8fc;
@@ -152,8 +209,12 @@ input:focus { outline: none; border-color: var(--brand); }
 .class-item:hover { background: #eef1f7; }
 .class-item.active { background: #e3edff; color: var(--brand-dark); font-weight: 600; }
 .class-item .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.class-item .tools { display: none; gap: 2px; flex: none; }
-.class-item:hover .tools { display: flex; }
+.class-item .tools {
+  display: flex; gap: 2px; flex: none;
+  opacity: 0; visibility: hidden; pointer-events: none;
+  transition: opacity .12s ease;
+}
+.class-item:hover .tools { opacity: 1; visibility: visible; pointer-events: auto; }
 .empty { color: var(--muted); text-align: center; padding: 20px 0; font-size: 14px; }
 
 /* 记分板 */
@@ -229,10 +290,14 @@ input:focus { outline: none; border-color: var(--brand); }
 .projector-title { font-size: 30px; font-weight: 800; text-align: center; margin-bottom: 24px; }
 .projector-board {
   flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 20px;
   align-content: start;
+  padding-bottom: 8px;
 }
 .proj-card {
   background: rgba(255,255,255,.06);
@@ -266,3 +331,10 @@ input:focus { outline: none; border-color: var(--brand); }
   box-shadow: 0 12px 26px rgba(17, 24, 39, .18);
 }
 #board.reordering { touch-action: none; }
+
+/* 防止移动端输入框聚焦时 iOS 自动放大整个页面：移动端所有输入元素字号 >= 16px */
+html { -webkit-text-size-adjust: 100%; }
+@media (max-width: 720px) {
+  input, select, textarea { font-size: 16px; }
+  .custom input, .custom input.amount { font-size: 16px; }
+}

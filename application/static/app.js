@@ -46,6 +46,16 @@ function showApp() {
   $('#app').classList.remove('hidden');
 }
 
+// 移动端班级弹窗（桌面端这些函数为空操作）
+function openMobileClassPanel() {
+  $('#class-backdrop').classList.add('open');
+  document.querySelector('.sidebar').classList.add('open');
+}
+function closeMobileClassPanel() {
+  $('#class-backdrop').classList.remove('open');
+  document.querySelector('.sidebar').classList.remove('open');
+}
+
 // ---------------- 渲染 ----------------
 function renderSidebar() {
   const el = $('#class-list');
@@ -67,8 +77,17 @@ function renderSidebar() {
       state.currentClassId = Number(item.dataset.id);
       saveSel();
       refresh();
+      closeMobileClassPanel();
     });
   });
+}
+
+function renderMobileClassSelect() {
+  const sel = $('#mobile-class-select');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">请选择班级</option>' + state.classes.map(c =>
+    `<option value="${c.id}"${c.id === state.currentClassId ? ' selected' : ''}>${esc(c.name)}</option>`
+  ).join('');
 }
 
 function groupCard(g) {
@@ -173,6 +192,7 @@ async function refresh() {
     state.classes = classes;
     state.history = history;
     renderSidebar();
+    renderMobileClassSelect();
     renderBoard();
     renderLeaderboard();
     renderHistory();
@@ -223,6 +243,7 @@ async function createClass() {
     state.currentClassId = res.id;
     saveSel();
     await refresh();
+    closeMobileClassPanel();
   } catch (e) { alert(e.message); }
 }
 async function renameClass(id) {
@@ -464,6 +485,16 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#btn-logout').addEventListener('click', doLogout);
   $('#btn-add-class').addEventListener('click', createClass);
   $('#class-name').addEventListener('keydown', e => { if (e.key === 'Enter') createClass(); });
+  $('#mobile-class-select').addEventListener('change', e => {
+    const v = e.target.value;
+    if (!v) return;
+    state.currentClassId = Number(v);
+    saveSel();
+    refresh();
+  });
+  $('#btn-classes').addEventListener('click', openMobileClassPanel);
+  $('#btn-class-close').addEventListener('click', closeMobileClassPanel);
+  $('#class-backdrop').addEventListener('click', closeMobileClassPanel);
   $('#btn-add-group').addEventListener('click', createGroup);
   $('#btn-reset').addEventListener('click', doReset);
   $('#btn-undo').addEventListener('click', doUndo);

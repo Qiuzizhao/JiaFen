@@ -42,6 +42,14 @@ def close_db(exc):
         db.close()
 
 
+@app.after_request
+def disable_static_cache(resp):
+    # 页面与静态资源不做缓存，避免 Cloudflare/浏览器拿到旧版前端
+    if not request.path.startswith("/api/"):
+        resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return resp
+
+
 def init_db():
     os.makedirs(DB_DIR, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
