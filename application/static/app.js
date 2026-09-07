@@ -9,6 +9,7 @@ const state = {
   history: [],
   dragActive: false,
   pendingRefresh: false,
+  leaderboardMode: 'class',
 };
 
 function esc(s) {
@@ -138,18 +139,31 @@ function renderBoard() {
 }
 
 function renderLeaderboard() {
-  const cls = getCurrentClass();
   const el = $('#leaderboard');
-  if (!cls || !cls.groups.length) { el.innerHTML = '<div class="empty">暂无小组</div>'; return; }
-  const sorted = [...cls.groups].sort((a, b) => b.score - a.score);
   const medals = ['🥇', '🥈', '🥉'];
-  el.innerHTML = sorted.map((g, i) => `
+  let items = [];
+  if (state.leaderboardMode === 'school') {
+    state.classes.forEach(c => c.groups.forEach(g => items.push({ ...g, tag: c.name + ' · ' + g.name })));
+  } else {
+    const cls = getCurrentClass();
+    if (cls) items = cls.groups.map(g => ({ ...g, tag: g.name }));
+  }
+  if (!items.length) { el.innerHTML = '<div class="empty">暂无小组</div>'; return; }
+  items.sort((a, b) => b.score - a.score);
+  el.innerHTML = items.map((g, i) => `
     <div class="lb-item ${i < 3 ? 'rank' + (i + 1) : ''}" style="--c:${esc(g.color)}">
       <span class="rank">${medals[i] || (i + 1)}</span>
       <span class="dot"></span>
-      <span class="lb-name">${esc(g.name)}</span>
+      <span class="lb-name" title="${esc(g.tag)}">${esc(g.tag)}</span>
       <span class="lb-score">${g.score}</span>
     </div>`).join('');
+}
+
+function setLeaderboardMode(mode) {
+  state.leaderboardMode = mode;
+  $('#lb-class-btn').classList.toggle('on', mode === 'class');
+  $('#lb-school-btn').classList.toggle('on', mode === 'school');
+  renderLeaderboard();
 }
 
 function renderHistory() {
@@ -222,14 +236,29 @@ async function doUndo() {
     else alert('没有可撤销的记录');
   } catch (e) { alert(e.message); }
 }
-async function doReset() {
+function openReset() {
   const cls = getCurrentClass();
   if (!cls) return;
-  if (!confirm('确定把「' + cls.name + '」所有小组分数清零？')) return;
+  $('#reset-class-name').textContent = cls.name;
+  $('#reset-pw').value = '';
+  $('#reset-err').textContent = '';
+  $('#reset-modal').classList.remove('hidden');
+  setTimeout(() => { try { $('#reset-pw').focus(); } catch (_) {} }, 60);
+}
+function closeReset() {
+  $('#reset-modal').classList.add('hidden');
+}
+async function confirmReset() {
+  const cls = getCurrentClass();
+  if (!cls) return;
+  const pw = $('#reset-pw').value;
   try {
-    await api('/api/classes/' + cls.id + '/reset', { method: 'POST' });
+    await api('/api/classes/' + cls.id + '/reset', { method: 'POST', body: { password: pw } });
+    closeReset();
     await refresh();
-  } catch (e) { alert(e.message); }
+  } catch (e) {
+    $('#reset-err').textContent = e.message;
+  }
 }
 
 // ---------------- 班级/小组管理 ----------------
@@ -496,8 +525,14 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#btn-class-close').addEventListener('click', closeMobileClassPanel);
   $('#class-backdrop').addEventListener('click', closeMobileClassPanel);
   $('#btn-add-group').addEventListener('click', createGroup);
-  $('#btn-reset').addEventListener('click', doReset);
+  $('#btn-reset').addEventListener('click', openReset);
+  $('#reset-confirm').addEventListener('click', confirmReset);
+  $('#reset-cancel').addEventListener('click', closeReset);
+  $('#reset-pw').addEventListener('keydown', e => { if (e.key === 'Enter') confirmReset(); });
+  $('#reset-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeReset(); });
   $('#btn-undo').addEventListener('click', doUndo);
+  $('#lb-class-btn').addEventListener('click', () => setLeaderboardMode('class'));
+  $('#lb-school-btn').addEventListener('click', () => setLeaderboardMode('school'));
   $('#btn-export').addEventListener('click', doExport);
   $('#btn-import').addEventListener('click', doImport);
   $('#import-file').addEventListener('change', handleImportFile);

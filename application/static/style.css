@@ -116,7 +116,7 @@ input:focus { outline: none; border-color: var(--brand); }
 /* 移动端班级切换下拉（桌面端隐藏）；在 720px 媒体查询中显示 */
 .mobile-class-select { display: none; }
 /* 移动端：班级弹窗相关（桌面端隐藏） */
-.btn-classes { display: none; }
+#btn-classes { display: none; }
 .class-close { display: none; margin-left: auto; }
 .class-backdrop { display: none; }
 @media (max-width: 720px) {
@@ -261,6 +261,28 @@ input:focus { outline: none; border-color: var(--brand); }
 .lb-item .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--c); flex: none; }
 .lb-item .lb-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lb-item .lb-score { font-weight: 700; }
+.lb-toggle {
+  margin-left: auto;
+  display: flex;
+  background: #eef1f7;
+  border-radius: 8px;
+  padding: 2px;
+}
+.lb-toggle button {
+  background: transparent;
+  border: none;
+  padding: 4px 10px;
+  font-size: 12px;
+  border-radius: 6px;
+  color: var(--muted);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.lb-toggle button.on {
+  background: #fff;
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
 
 /* 记录 */
 .history { display: flex; flex-direction: column; gap: 6px; max-height: 420px; overflow-y: auto; }
@@ -331,6 +353,32 @@ input:focus { outline: none; border-color: var(--brand); }
   box-shadow: 0 12px 26px rgba(17, 24, 39, .18);
 }
 #board.reordering { touch-action: none; }
+
+/* 弹窗 */
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: rgba(0, 0, 0, .45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.modal-box {
+  background: var(--card);
+  border-radius: 16px;
+  box-shadow: 0 18px 40px rgba(17, 24, 39, .25);
+  padding: 24px;
+  width: min(380px, 100%);
+}
+.modal-box h3 { margin: 0 0 10px; font-size: 18px; }
+.modal-box p { margin: 0 0 12px; color: var(--muted); font-size: 14px; line-height: 1.5; }
+.modal-box input[type="password"] { width: 100%; margin: 6px 0 10px; }
+.modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 8px; }
+.modal-actions button { flex: 1; padding: 10px 0; }
+button.primary.danger { background: var(--down); }
+button.primary.danger:hover { background: var(--down-dark); }
 
 /* 防止移动端输入框聚焦时 iOS 自动放大整个页面：移动端所有输入元素字号 >= 16px */
 html { -webkit-text-size-adjust: 100%; }
