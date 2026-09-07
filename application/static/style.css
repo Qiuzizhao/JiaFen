@@ -225,6 +225,7 @@ input:focus { outline: none; border-color: var(--brand); }
 .board { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
 
 .group-card {
+  position: relative;
   border: 1px solid var(--line);
   border-left: 5px solid var(--c, #5B9BD5);
   border-radius: var(--radius);
@@ -238,6 +239,27 @@ input:focus { outline: none; border-color: var(--brand); }
 .group-head .dot { width: 14px; height: 14px; border-radius: 50%; background: var(--c, #5B9BD5); flex: none; }
 .group-head .gname { font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gscore { font-size: 40px; font-weight: 800; text-align: center; letter-spacing: .5px; }
+.school-rank {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px 3px 7px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--muted);
+  background: #f1f5f9;
+  border: 1px solid var(--line);
+  box-shadow: 0 1px 2px rgba(17, 24, 39, .06);
+}
+.school-rank .rk-medal { font-size: 13px; line-height: 1; }
+.school-rank.rk1 { color: #92400e; background: #fef3c7; border-color: #fcd34d; }
+.school-rank.rk2 { color: #475569; background: #e2e8f0; border-color: #cbd5e1; }
+.school-rank.rk3 { color: #9a3412; background: #fed7aa; border-color: #fdba74; }
 .quick { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
 .qbtn { padding: 8px 0; font-weight: 600; font-size: 14px; border-radius: 8px; }
 .qbtn.up { background: #e7f8f1; color: var(--up-dark); }
@@ -255,6 +277,8 @@ input:focus { outline: none; border-color: var(--brand); }
 .leaderboard { display: flex; flex-direction: column; gap: 8px; }
 .lb-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; background: #f6f8fc; }
 .lb-item .rank { width: 32px; flex: none; text-align: center; font-weight: 700; color: var(--muted); }
+.lb-item.rank1 { background: #fdf1cf; border: 1px solid #f2d281; }
+.lb-item.rank2 { background: #eef1f6; border: 1px solid #d3d9e3; }
 .lb-item.rank1 .rank { color: #b45309; }
 .lb-item.rank2 .rank { color: #64748b; }
 .lb-item.rank3 .rank { color: #92400e; }

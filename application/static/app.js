@@ -91,8 +91,24 @@ function renderMobileClassSelect() {
   ).join('');
 }
 
-function groupCard(g) {
+function schoolRankMap() {
+  const all = [];
+  state.classes.forEach(c => c.groups.forEach(g => all.push({ id: g.id, score: g.score })));
+  all.sort((a, b) => b.score - a.score);
+  const m = new Map();
+  all.forEach((g, i) => m.set(g.id, i + 1));
+  return m;
+}
+
+function groupCard(g, ranks) {
   const q = [[1, '+1'], [2, '+2'], [5, '+5'], [-1, '-1'], [-2, '-2'], [-5, '-5']];
+  const rk = ranks.get(g.id);
+  const rankBadge = rk != null
+    ? `<div class="school-rank rk${Math.min(rk, 3)}" title="全校排名第 ${rk} 名">
+        ${rk <= 3 ? `<span class="rk-medal">${['🥇', '🥈', '🥉'][rk - 1]}</span>` : ''}
+        <span class="rk-num">#${rk}</span>
+      </div>`
+    : '';
   return `
   <div class="group-card" data-gid="${g.id}" style="--c:${esc(g.color)}">
     <div class="group-head">
@@ -112,6 +128,7 @@ function groupCard(g) {
         <button onclick="applyCustom(${g.id})">记分</button>
       </div>
     </div>
+    ${rankBadge}
   </div>`;
 }
 
@@ -135,7 +152,8 @@ function renderBoard() {
     board.innerHTML = '<div class="empty">这个班级还没有小组，点击右上角「添加小组」</div>';
     return;
   }
-  board.innerHTML = cls.groups.map(groupCard).join('');
+  const ranks = schoolRankMap();
+  board.innerHTML = cls.groups.map(g => groupCard(g, ranks)).join('');
 }
 
 function renderLeaderboard() {
