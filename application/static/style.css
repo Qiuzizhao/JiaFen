@@ -261,6 +261,28 @@ input:focus { outline: none; border-color: var(--brand); }
 .lb-item .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--c); flex: none; }
 .lb-item .lb-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lb-item .lb-score { font-weight: 700; }
+.lb-toggle {
+  margin-left: auto;
+  display: flex;
+  background: #eef1f7;
+  border-radius: 8px;
+  padding: 2px;
+}
+.lb-toggle button {
+  background: transparent;
+  border: none;
+  padding: 4px 10px;
+  font-size: 12px;
+  border-radius: 6px;
+  color: var(--muted);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.lb-toggle button.on {
+  background: #fff;
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
 
 /* 记录 */
 .history { display: flex; flex-direction: column; gap: 6px; max-height: 420px; overflow-y: auto; }

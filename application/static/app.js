@@ -9,6 +9,7 @@ const state = {
   history: [],
   dragActive: false,
   pendingRefresh: false,
+  leaderboardMode: 'class',
 };
 
 function esc(s) {
@@ -138,18 +139,31 @@ function renderBoard() {
 }
 
 function renderLeaderboard() {
-  const cls = getCurrentClass();
   const el = $('#leaderboard');
-  if (!cls || !cls.groups.length) { el.innerHTML = '<div class="empty">暂无小组</div>'; return; }
-  const sorted = [...cls.groups].sort((a, b) => b.score - a.score);
   const medals = ['🥇', '🥈', '🥉'];
-  el.innerHTML = sorted.map((g, i) => `
+  let items = [];
+  if (state.leaderboardMode === 'school') {
+    state.classes.forEach(c => c.groups.forEach(g => items.push({ ...g, tag: c.name + ' · ' + g.name })));
+  } else {
+    const cls = getCurrentClass();
+    if (cls) items = cls.groups.map(g => ({ ...g, tag: g.name }));
+  }
+  if (!items.length) { el.innerHTML = '<div class="empty">暂无小组</div>'; return; }
+  items.sort((a, b) => b.score - a.score);
+  el.innerHTML = items.map((g, i) => `
     <div class="lb-item ${i < 3 ? 'rank' + (i + 1) : ''}" style="--c:${esc(g.color)}">
       <span class="rank">${medals[i] || (i + 1)}</span>
       <span class="dot"></span>
-      <span class="lb-name">${esc(g.name)}</span>
+      <span class="lb-name" title="${esc(g.tag)}">${esc(g.tag)}</span>
       <span class="lb-score">${g.score}</span>
     </div>`).join('');
+}
+
+function setLeaderboardMode(mode) {
+  state.leaderboardMode = mode;
+  $('#lb-class-btn').classList.toggle('on', mode === 'class');
+  $('#lb-school-btn').classList.toggle('on', mode === 'school');
+  renderLeaderboard();
 }
 
 function renderHistory() {
@@ -517,6 +531,8 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#reset-pw').addEventListener('keydown', e => { if (e.key === 'Enter') confirmReset(); });
   $('#reset-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeReset(); });
   $('#btn-undo').addEventListener('click', doUndo);
+  $('#lb-class-btn').addEventListener('click', () => setLeaderboardMode('class'));
+  $('#lb-school-btn').addEventListener('click', () => setLeaderboardMode('school'));
   $('#btn-export').addEventListener('click', doExport);
   $('#btn-import').addEventListener('click', doImport);
   $('#import-file').addEventListener('change', handleImportFile);
