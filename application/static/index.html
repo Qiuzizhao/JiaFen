@@ -77,6 +77,20 @@
   <!-- 移动端班级弹窗背景 -->
   <div id="class-backdrop" class="class-backdrop"></div>
 
+  <!-- 清零确认弹窗 -->
+  <div id="reset-modal" class="modal hidden">
+    <div class="modal-box">
+      <h3>清零本班分数</h3>
+      <p>请输入管理密码确认清零「<span id="reset-class-name"></span>」所有小组分数。此操作不可撤销。</p>
+      <input type="password" id="reset-pw" placeholder="管理密码" autocomplete="off">
+      <p id="reset-err" class="err"></p>
+      <div class="modal-actions">
+        <button id="reset-cancel" class="ghost">取消</button>
+        <button id="reset-confirm" class="primary danger">确认清零</button>
+      </div>
+    </div>
+  </div>
+
   <!-- 投屏模式 -->
   <div id="projector" class="hidden">
     <button id="projector-close" class="close-btn">✕ 退出投屏</button>

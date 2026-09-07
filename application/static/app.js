@@ -222,14 +222,29 @@ async function doUndo() {
     else alert('没有可撤销的记录');
   } catch (e) { alert(e.message); }
 }
-async function doReset() {
+function openReset() {
   const cls = getCurrentClass();
   if (!cls) return;
-  if (!confirm('确定把「' + cls.name + '」所有小组分数清零？')) return;
+  $('#reset-class-name').textContent = cls.name;
+  $('#reset-pw').value = '';
+  $('#reset-err').textContent = '';
+  $('#reset-modal').classList.remove('hidden');
+  setTimeout(() => { try { $('#reset-pw').focus(); } catch (_) {} }, 60);
+}
+function closeReset() {
+  $('#reset-modal').classList.add('hidden');
+}
+async function confirmReset() {
+  const cls = getCurrentClass();
+  if (!cls) return;
+  const pw = $('#reset-pw').value;
   try {
-    await api('/api/classes/' + cls.id + '/reset', { method: 'POST' });
+    await api('/api/classes/' + cls.id + '/reset', { method: 'POST', body: { password: pw } });
+    closeReset();
     await refresh();
-  } catch (e) { alert(e.message); }
+  } catch (e) {
+    $('#reset-err').textContent = e.message;
+  }
 }
 
 // ---------------- 班级/小组管理 ----------------
@@ -496,7 +511,11 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#btn-class-close').addEventListener('click', closeMobileClassPanel);
   $('#class-backdrop').addEventListener('click', closeMobileClassPanel);
   $('#btn-add-group').addEventListener('click', createGroup);
-  $('#btn-reset').addEventListener('click', doReset);
+  $('#btn-reset').addEventListener('click', openReset);
+  $('#reset-confirm').addEventListener('click', confirmReset);
+  $('#reset-cancel').addEventListener('click', closeReset);
+  $('#reset-pw').addEventListener('keydown', e => { if (e.key === 'Enter') confirmReset(); });
+  $('#reset-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeReset(); });
   $('#btn-undo').addEventListener('click', doUndo);
   $('#btn-export').addEventListener('click', doExport);
   $('#btn-import').addEventListener('click', doImport);

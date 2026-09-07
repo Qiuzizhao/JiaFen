@@ -257,6 +257,10 @@ def delete_class(cid):
 @app.route("/api/classes/<int:cid>/reset", methods=["POST"])
 @login_required
 def reset_class(cid):
+    data = request.get_json(silent=True) or {}
+    pw = data.get("password", "")
+    if not hmac.compare_digest(pw, ADMIN_PASSWORD):
+        return jsonify({"error": "密码错误，无法清零"}), 403
     db = get_db()
     db.execute("UPDATE groups SET score=0 WHERE class_id=?", (cid,))
     db.execute("DELETE FROM transactions WHERE class_id=?", (cid,))
