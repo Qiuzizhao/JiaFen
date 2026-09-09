@@ -138,6 +138,8 @@ function renderBoard() {
   const board = $('#board');
   const addBtn = $('#btn-add-group');
   const resetBtn = $('#btn-reset');
+  const csBar = $('#class-score');
+  csBar.classList.toggle('disabled', !cls || !cls.groups.length);
   if (!cls) {
     title.textContent = '请选择班级';
     board.innerHTML = '<div class="empty">请先在左侧选择或新建一个班级</div>';
@@ -187,13 +189,23 @@ function setLeaderboardMode(mode) {
 function renderHistory() {
   const el = $('#history');
   if (!state.history.length) { el.innerHTML = '<div class="empty">暂无记分记录</div>'; return; }
-  el.innerHTML = state.history.map(h => `
+  // 全班加减分同一批次插入多条记录，这里合并成一条显示
+  const items = [];
+  state.history.forEach(h => {
+    const prev = items[items.length - 1];
+    if (h.batch_id && prev && prev.batch_id === h.batch_id) { prev.count++; return; }
+    items.push({ ...h, count: 1 });
+  });
+  el.innerHTML = items.map(h => {
+    const label = h.batch_id ? `全班 · ${h.count}组` : h.group_name;
+    return `
     <div class="hist-item">
       <span class="hist-delta ${h.delta > 0 ? 'pos' : 'neg'}">${h.delta > 0 ? '+' : ''}${h.delta}</span>
-      <span class="hist-group" title="${esc(h.group_name)}">${esc(h.group_name)}</span>
+      <span class="hist-group${h.batch_id ? ' batch' : ''}" title="${esc(label)}">${esc(label)}</span>
       ${h.reason ? `<span class="hist-reason" title="${esc(h.reason)}">${esc(h.reason)}</span>` : ''}
       <span class="hist-time">${esc(h.created_at.slice(5, 16))}</span>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 function renderProjector() {
@@ -246,6 +258,25 @@ function applyCustom(gid) {
   if (isNaN(v) || v === 0) { alert('请输入有效的分值'); return; }
   addScore(gid, v);
   $('#amount-' + gid).value = '';
+}
+// 全班加减分：本班每个小组同时加减同一个分值
+async function addClassScore(delta, reason = '') {
+  const cls = getCurrentClass();
+  if (!cls) { alert('请先选择班级'); return; }
+  if (!cls.groups.length) { alert('这个班级还没有小组'); return; }
+  try {
+    await api('/api/classes/' + cls.id + '/score', { method: 'POST', body: { delta, reason } });
+    await refresh();
+  } catch (e) { alert(e.message); }
+}
+function applyClassCustom() {
+  const input = $('#class-amount');
+  const amt = input.value.trim();
+  if (!amt) { alert('请输入分值'); return; }
+  const v = parseInt(amt, 10);
+  if (isNaN(v) || v === 0) { alert('请输入有效的分值'); return; }
+  addClassScore(v);
+  input.value = '';
 }
 async function doUndo() {
   try {
@@ -543,6 +574,8 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#btn-class-close').addEventListener('click', closeMobileClassPanel);
   $('#class-backdrop').addEventListener('click', closeMobileClassPanel);
   $('#btn-add-group').addEventListener('click', createGroup);
+  $('#btn-class-score').addEventListener('click', applyClassCustom);
+  $('#class-amount').addEventListener('keydown', e => { if (e.key === 'Enter') applyClassCustom(); });
   $('#btn-reset').addEventListener('click', openReset);
   $('#reset-confirm').addEventListener('click', confirmReset);
   $('#reset-cancel').addEventListener('click', closeReset);

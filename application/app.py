@@ -4,6 +4,7 @@ import queue
 import sqlite3
 import threading
 import hmac
+import uuid
 from datetime import datetime
 from functools import wraps
 
@@ -78,10 +79,15 @@ def init_db():
             class_id INTEGER NOT NULL,
             delta INTEGER NOT NULL,
             reason TEXT NOT NULL DEFAULT '',
+            batch_id TEXT,
             created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
         );
         """
     )
+    # 迁移：老库补 batch_id 列（全班加减分按批次记录，便于整体撤销）
+    tcols = [r[1] for r in conn.execute("PRAGMA table_info(transactions)").fetchall()]
+    if "batch_id" not in tcols:
+        conn.execute("ALTER TABLE transactions ADD COLUMN batch_id TEXT")
     # 迁移：老库补 sort_order 列，并按原顺序回填
     cols = [r[1] for r in conn.execute("PRAGMA table_info(groups)").fetchall()]
     if "sort_order" not in cols:
@@ -367,15 +373,64 @@ def add_score():
     return jsonify({"ok": True})
 
 
+@app.route("/api/classes/<int:cid>/score", methods=["POST"])
+@login_required
+def add_class_score(cid):
+    """全班加减分：给该班级每个小组都加上同一个分值，同一批次记录，可整体撤销。"""
+    data = request.get_json(silent=True) or {}
+    try:
+        delta = int(data.get("delta", 0))
+    except (TypeError, ValueError):
+        return jsonify({"error": "分值无效"}), 400
+    reason = (data.get("reason") or "").strip()
+    if delta == 0:
+        return jsonify({"error": "参数错误"}), 400
+    db = get_db()
+    groups = db.execute("SELECT id FROM groups WHERE class_id=?", (cid,)).fetchall()
+    if not groups:
+        return jsonify({"error": "该班级还没有小组"}), 404
+    batch_id = uuid.uuid4().hex
+    for gr in groups:
+        db.execute(
+            "INSERT INTO transactions(group_id, class_id, delta, reason, batch_id) "
+            "VALUES(?,?,?,?,?)",
+            (gr["id"], cid, delta, reason, batch_id),
+        )
+    db.execute("UPDATE groups SET score = score + ? WHERE class_id=?", (delta, cid))
+    db.commit()
+    broadcast()
+    return jsonify({"ok": True, "count": len(groups), "delta": delta, "batch_id": batch_id})
+
+
 @app.route("/api/undo", methods=["POST"])
 @login_required
 def undo():
     db = get_db()
     t = db.execute(
-        "SELECT id, group_id, delta FROM transactions ORDER BY id DESC LIMIT 1"
+        "SELECT id, group_id, delta, batch_id FROM transactions ORDER BY id DESC LIMIT 1"
     ).fetchone()
     if not t:
         return jsonify({"ok": True, "undone": False})
+    if t["batch_id"]:
+        # 全班加减分：同一批次的记录一起撤销
+        rows = db.execute(
+            "SELECT id, group_id, delta FROM transactions WHERE batch_id=?", (t["batch_id"],)
+        ).fetchall()
+        for r in rows:
+            db.execute("UPDATE groups SET score = score - ? WHERE id=?", (r["delta"], r["group_id"]))
+        db.execute("DELETE FROM transactions WHERE batch_id=?", (t["batch_id"],))
+        db.commit()
+        broadcast()
+        return jsonify(
+            {
+                "ok": True,
+                "undone": True,
+                "batch": True,
+                "count": len(rows),
+                "delta": t["delta"],
+                "group_ids": [r["group_id"] for r in rows],
+            }
+        )
     db.execute("UPDATE groups SET score = score - ? WHERE id=?", (t["delta"], t["group_id"]))
     db.execute("DELETE FROM transactions WHERE id=?", (t["id"],))
     db.commit()
@@ -389,7 +444,7 @@ def history():
     cid = request.args.get("class_id")
     db = get_db()
     query = (
-        "SELECT t.id, t.delta, t.reason, t.created_at, t.group_id, "
+        "SELECT t.id, t.delta, t.reason, t.created_at, t.group_id, t.batch_id, "
         "g.name AS group_name, c.name AS class_name "
         "FROM transactions t "
         "JOIN groups g ON g.id = t.group_id "

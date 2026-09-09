@@ -133,6 +133,11 @@ input:focus { outline: none; border-color: var(--brand); }
   .main { min-height: 0; }
   .board-head { flex-direction: column; align-items: stretch; gap: 8px; }
   .board { grid-template-columns: 1fr; gap: 12px; }
+  .class-score { gap: 6px; padding: 10px; }
+  .class-score .cs-quick { flex: 1 1 100%; }
+  .class-score .cs-quick .qbtn { flex: 1; min-width: 0; }
+  .class-score .cs-custom { flex: 1 1 100%; margin-left: 0; }
+  .class-score .cs-custom input { flex: 1; width: auto; }
   .gscore { font-size: 34px; }
   input, .custom input { font-size: 16px; }
   .icon-btn { width: 32px; height: 32px; font-size: 16px; }
@@ -223,6 +228,24 @@ input:focus { outline: none; border-color: var(--brand); }
 .board-title { margin: 0; font-size: 20px; }
 .board-actions { display: flex; gap: 10px; }
 .board { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
+
+/* 全班加减分操作栏 */
+.class-score {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  background: #f6f8fc;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.class-score.disabled { opacity: .5; pointer-events: none; }
+.class-score .cs-label { flex: none; font-size: 14px; font-weight: 700; color: var(--brand-dark); }
+.class-score .cs-quick { display: flex; gap: 6px; flex: 1 1 auto; }
+.class-score .cs-quick .qbtn { flex: 0 1 62px; min-width: 46px; }
+.class-score .cs-custom { display: flex; gap: 6px; margin-left: auto; }
+.class-score .cs-custom input { width: 88px; padding: 8px 10px; font-size: 13px; }
+.class-score .cs-custom button { padding: 8px 14px; background: var(--brand); color: #fff; font-weight: 600; border-radius: 8px; }
+.class-score .cs-custom button:hover { background: var(--brand-dark); }
 
 .group-card {
   position: relative;
@@ -315,6 +338,7 @@ input:focus { outline: none; border-color: var(--brand); }
 .hist-delta.pos { color: var(--up-dark); }
 .hist-delta.neg { color: var(--down-dark); }
 .hist-group { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.hist-group.batch { color: var(--brand-dark); font-weight: 600; }
 .hist-reason { flex: 1; min-width: 0; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hist-time { color: var(--muted); font-size: 11px; flex: none; }
 
@@ -409,4 +433,5 @@ html { -webkit-text-size-adjust: 100%; }
 @media (max-width: 720px) {
   input, select, textarea { font-size: 16px; }
   .custom input, .custom input.amount { font-size: 16px; }
+  .class-score .cs-custom input { font-size: 16px; }
 }

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>课堂小组积分</title>
-  <link rel="stylesheet" href="/style.css?v=20260907">
+  <link rel="stylesheet" href="/style.css?v=20260909">
 </head>
 <body>
 
@@ -54,6 +54,21 @@
           </div>
         </div>
         <select id="mobile-class-select" class="mobile-class-select" aria-label="切换班级"></select>
+        <div id="class-score" class="class-score disabled" title="给本班每个小组同时加减分">
+          <span class="cs-label">全班</span>
+          <div class="cs-quick">
+            <button class="qbtn up" onclick="addClassScore(1)">+1</button>
+            <button class="qbtn up" onclick="addClassScore(2)">+2</button>
+            <button class="qbtn up" onclick="addClassScore(5)">+5</button>
+            <button class="qbtn down" onclick="addClassScore(-1)">-1</button>
+            <button class="qbtn down" onclick="addClassScore(-2)">-2</button>
+            <button class="qbtn down" onclick="addClassScore(-5)">-5</button>
+          </div>
+          <div class="cs-custom">
+            <input type="number" id="class-amount" class="amount" placeholder="分值">
+            <button id="btn-class-score">记分</button>
+          </div>
+        </div>
         <div id="board" class="board"></div>
       </main>
 
@@ -104,6 +119,6 @@
     <div id="projector-board" class="projector-board"></div>
   </div>
 
-  <script src="/app.js?v=20260907"></script>
+  <script src="/app.js?v=20260909"></script>
 </body>
 </html>
