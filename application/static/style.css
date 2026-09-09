@@ -361,7 +361,7 @@ input:focus { outline: none; border-color: var(--brand); }
 .hist-delta { font-weight: 700; width: 30px; text-align: center; }
 .hist-delta.pos { color: var(--up-dark); }
 .hist-delta.neg { color: var(--down-dark); }
-.hist-group { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.hist-group { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
 .hist-group.batch { color: var(--brand-dark); font-weight: 600; }
 .hist-reason { flex: 1; min-width: 0; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hist-time { color: var(--muted); font-size: 11px; flex: none; }

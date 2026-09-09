@@ -31,6 +31,12 @@ function findGroup(gid) {
   }
   return null;
 }
+function findClassOfGroup(gid) {
+  for (const c of state.classes) {
+    if (c.groups.some(x => x.id === gid)) return c;
+  }
+  return null;
+}
 function localStamp() {
   const d = new Date();
   const p = (n) => String(n).padStart(2, '0');
@@ -218,7 +224,8 @@ function renderHistory() {
     items.push({ ...h, count: 1 });
   });
   el.innerHTML = items.map(h => {
-    const label = h.batch_id ? `全班 · ${h.count}组` : h.group_name;
+    const base = h.batch_id ? `全班 · ${h.count}组` : h.group_name;
+    const label = h.class_name ? `${h.class_name} · ${base}` : base;
     return `
     <div class="hist-item">
       <span class="hist-delta ${h.delta > 0 ? 'pos' : 'neg'}">${h.delta > 0 ? '+' : ''}${h.delta}</span>
@@ -620,24 +627,26 @@ function handleRemoteUpdate(data) {
   if (data.kind === 'score' && typeof data.score === 'number') {
     setGroupScore(data.group_id, data.score);
     const g = findGroup(data.group_id);
+    const cls = findClassOfGroup(data.group_id);
     prependHistoryLocal({
       id: 'remote-' + Date.now() + '-' + data.group_id, delta: data.delta,
       reason: data.reason || '', created_at: data.at || localStamp(),
       group_id: data.group_id, batch_id: null,
-      group_name: g ? g.name : '', class_name: '',
+      group_name: g ? g.name : '', class_name: cls ? cls.name : '',
     });
     return;
   }
   if (data.kind === 'class_score' && Array.isArray(data.scores)) {
     setGroupScores(data.scores);
     const stamp = data.at || localStamp();
+    const cls = state.classes.find(c => c.id === data.class_id);
     const entries = data.scores.map(s => {
       const g = findGroup(s.id);
       return {
         id: 'remote-' + s.id + '-' + stamp, delta: data.delta,
         reason: data.reason || '', created_at: stamp,
         group_id: s.id, batch_id: data.batch_id || ('remote-' + stamp),
-        group_name: g ? g.name : '', class_name: '',
+        group_name: g ? g.name : '', class_name: cls ? cls.name : '',
       };
     });
     entries.reverse().forEach(prependHistoryLocal);
