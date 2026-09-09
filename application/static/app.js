@@ -229,18 +229,28 @@ function renderHistory() {
   }).join('');
 }
 
-function renderProjector() {
+let projOrder = null;
+function renderProjector(forceSort = false) {
   const cls = getCurrentClass();
   const el = $('#projector-board');
   const title = $('#projector-title');
-  if (!cls) { title.textContent = '课堂小组积分'; el.innerHTML = ''; return; }
+  if (!cls) { title.textContent = '课堂小组积分'; el.innerHTML = ''; projOrder = null; return; }
   title.textContent = cls.name;
-  if (!cls.groups.length) { el.innerHTML = '<div class="empty">暂无小组</div>'; return; }
+  if (!cls.groups.length) { el.innerHTML = '<div class="empty">暂无小组</div>'; projOrder = null; return; }
   const sorted = [...cls.groups].sort((a, b) => b.score - a.score);
-  el.innerHTML = sorted.map((g, i) => `
-    <div class="proj-card ${i === 0 ? 'first' : ''}" style="--c:${esc(g.color)}">
+  const leaderId = sorted[0].id;
+  const valid = projOrder && projOrder.length === cls.groups.length
+    && projOrder.every(id => cls.groups.some(g => g.id === id));
+  const order = (!forceSort && valid) ? projOrder.map(id => cls.groups.find(g => g.id === id)) : sorted;
+  if (forceSort || !valid) projOrder = order.map(g => g.id);
+  el.innerHTML = order.map(g => `
+    <div class="proj-card ${g.id === leaderId ? 'first' : ''}" data-gid="${g.id}" style="--c:${esc(g.color)}">
       <div class="p-name">${esc(g.name)}</div>
       <div class="p-score">${g.score}</div>
+      <div class="p-actions">
+        <button class="pbtn plus" onclick="addScore(${g.id},1)" title="加 1 分">+1</button>
+        <button class="pbtn minus" onclick="addScore(${g.id},-1)" title="减 1 分">-1</button>
+      </div>
     </div>`).join('');
 }
 
@@ -658,7 +668,7 @@ async function init() {
 
 // ---------------- 投屏 ----------------
 function openProjector() {
-  renderProjector();
+  renderProjector(true);
   $('#projector').classList.remove('hidden');
 }
 function closeProjector() { $('#projector').classList.add('hidden'); }
