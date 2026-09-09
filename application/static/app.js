@@ -43,11 +43,17 @@ async function api(path, opts = {}) {
     cfg.body = JSON.stringify(cfg.body);
     cfg.headers['Content-Type'] = 'application/json';
   }
-  const res = await fetch(path, cfg);
-  if (res.status === 401) { showLogin(); return Promise.reject(new Error('未登录')); }
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || '请求失败');
-  return data;
+  const mutating = (cfg.method || 'GET').toUpperCase() !== 'GET';
+  if (mutating) { pendingOps++; renderSyncStatus(); }
+  try {
+    const res = await fetch(path, cfg);
+    if (res.status === 401) { showLogin(); throw new Error('未登录'); }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || '请求失败');
+    return data;
+  } finally {
+    if (mutating) { pendingOps--; renderSyncStatus(); }
+  }
 }
 
 function showLogin() {
@@ -529,12 +535,18 @@ let lastSeq = 0;
 let sseOpened = 0;
 let lastSseAt = 0;
 let sseWatchdog = null;
+let sseConnected = false;
+let pendingOps = 0;
 
-function setSyncStatus(ok) {
+function renderSyncStatus() {
   const el = $('#sync-status');
   if (!el) return;
-  el.classList.toggle('off', !ok);
-  el.title = ok ? '实时同步已连接' : '同步连接中断，正在重连…';
+  let cls = 'synced', text = '已同步', title = '实时同步已连接';
+  if (!sseConnected) { cls = 'offline'; text = '未连接'; title = '实时同步连接中断，正在重连…'; }
+  else if (pendingOps > 0) { cls = 'syncing'; text = '同步中…'; title = '正在保存到服务器'; }
+  el.className = 'sync-status ' + cls;
+  el.textContent = text;
+  el.title = title;
 }
 
 function openSSE() {
@@ -544,7 +556,8 @@ function openSSE() {
   es.addEventListener('connected', (ev) => {
     sseOpened++;
     lastSseAt = Date.now();
-    setSyncStatus(true);
+    sseConnected = true;
+    renderSyncStatus();
     let d = {};
     try { d = JSON.parse(ev.data || '{}'); } catch (_) { d = {}; }
     if (typeof d.seq === 'number') lastSeq = d.seq;
@@ -570,10 +583,11 @@ function openSSE() {
 
   es.addEventListener('ping', () => {
     lastSseAt = Date.now();
-    setSyncStatus(true);
+    sseConnected = true;
+    renderSyncStatus();
   });
 
-  es.onerror = () => setSyncStatus(false);
+  es.onerror = () => { sseConnected = false; renderSyncStatus(); };
 }
 
 function startSseWatchdog() {
