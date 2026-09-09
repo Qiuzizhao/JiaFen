@@ -82,6 +82,11 @@ def init_db():
             batch_id TEXT,
             created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
         );
+
+        CREATE TABLE IF NOT EXISTS meta (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        );
         """
     )
     # 迁移：老库补 batch_id 列（全班加减分按批次记录，便于整体撤销）
@@ -100,6 +105,12 @@ def init_db():
             )
             """
         )
+    # 迁移：早期容器时区为 UTC，历史时间戳整体 +8 小时校正为北京时间（仅执行一次）
+    if conn.execute("SELECT 1 FROM meta WHERE key='tz_fix_v1'").fetchone() is None:
+        conn.execute("UPDATE transactions SET created_at = datetime(created_at, '+8 hours')")
+        conn.execute("UPDATE classes SET created_at = datetime(created_at, '+8 hours')")
+        conn.execute("UPDATE groups SET created_at = datetime(created_at, '+8 hours')")
+        conn.execute("INSERT INTO meta(key, value) VALUES('tz_fix_v1', '1')")
     conn.commit()
     conn.close()
 
