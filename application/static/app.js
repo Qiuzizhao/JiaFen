@@ -525,14 +525,69 @@ async function doLogout() {
   showLogin();
 }
 let es = null;
+let lastSeq = 0;
+let sseOpened = 0;
+let lastSseAt = 0;
+let sseWatchdog = null;
+
+function setSyncStatus(ok) {
+  const el = $('#sync-status');
+  if (!el) return;
+  el.classList.toggle('off', !ok);
+  el.title = ok ? '实时同步已连接' : '同步连接中断，正在重连…';
+}
+
 function openSSE() {
   if (es) es.close();
   es = new EventSource('/api/events');
+
+  es.addEventListener('connected', (ev) => {
+    sseOpened++;
+    lastSseAt = Date.now();
+    setSyncStatus(true);
+    let d = {};
+    try { d = JSON.parse(ev.data || '{}'); } catch (_) { d = {}; }
+    if (typeof d.seq === 'number') lastSeq = d.seq;
+    // 首次连接与重连都对账一次，确保连接建立前后的变更不漏
+    refresh();
+  });
+
   es.addEventListener('update', (ev) => {
+    lastSseAt = Date.now();
     let data = {};
     try { data = JSON.parse(ev.data || '{}'); } catch (_) { data = {}; }
+    if (typeof data.seq === 'number') {
+      // 序号跳号=漏事件；序号变小=服务端重启。两种情况都整页对账。
+      if (lastSeq && (data.seq > lastSeq + 1 || data.seq < lastSeq)) {
+        lastSeq = data.seq;
+        refresh();
+        return;
+      }
+      lastSeq = data.seq;
+    }
     handleRemoteUpdate(data);
   });
+
+  es.addEventListener('ping', () => {
+    lastSseAt = Date.now();
+    setSyncStatus(true);
+  });
+
+  es.onerror = () => setSyncStatus(false);
+}
+
+function startSseWatchdog() {
+  if (sseWatchdog) return;
+  lastSseAt = Date.now();
+  sseWatchdog = setInterval(() => {
+    if (document.hidden) return;
+    // 服务端每 15 秒发一次 ping；超过 45 秒无任何消息视为连接卡死，重连并对账
+    if (Date.now() - lastSseAt > 45000) {
+      try { if (es) es.close(); } catch (_) {}
+      openSSE();
+      refresh();
+    }
+  }, 15000);
 }
 
 // 其它设备的改动：能局部更新就局部更新，只有结构性变化才整页重新拉取
@@ -577,6 +632,7 @@ async function bootstrap() {
   state.currentClassId = loadSel();
   await refresh();
   openSSE();
+  startSseWatchdog();
 }
 async function init() {
   try {

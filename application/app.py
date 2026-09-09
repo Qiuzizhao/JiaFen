@@ -146,13 +146,26 @@ class EventBroker:
 
 BROKER = EventBroker()
 
+# 全局变更序号：每次广播自增。前端据此检测「断线期间漏掉的事件」和服务重启
+_seq_lock = threading.Lock()
+_seq = 0
+
+
+def current_seq():
+    with _seq_lock:
+        return _seq
+
 
 def broadcast(payload=None):
     """推送变更给所有在线设备。
 
     payload 里带 kind/client/score 等字段时，前端可以只做局部更新，不必整页重新拉取。
     """
-    data = {"time": datetime.now().isoformat()}
+    global _seq
+    with _seq_lock:
+        _seq += 1
+        seq = _seq
+    data = {"time": datetime.now().isoformat(), "seq": seq}
     if payload:
         data.update(payload)
     BROKER.publish("update", data)
@@ -166,13 +179,14 @@ def stream():
 
     def gen():
         try:
-            yield "event: connected\ndata: {}\n\n"
+            yield "event: connected\ndata: %s\n\n" % json.dumps({"seq": current_seq()})
             while True:
                 try:
-                    msg = q.get(timeout=1.0)
+                    # 15 秒一次保活，足以穿过 nginx/Cloudflare，又比原来每秒一次省很多
+                    msg = q.get(timeout=15.0)
                     yield msg
                 except queue.Empty:
-                    yield ": keepalive\n\n"
+                    yield "event: ping\ndata: {}\n\n"
         except GeneratorExit:
             pass
         finally:
