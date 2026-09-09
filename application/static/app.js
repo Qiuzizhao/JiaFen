@@ -2,6 +2,9 @@ const $ = (s) => document.querySelector(s);
 const PALETTE = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#ec4899','#84cc16','#f97316','#14b8a6'];
 let colorIndex = 0;
 
+// 本设备的随机标识：服务端广播变更时带上它，用来忽略自己触发的回显
+const CLIENT_ID = Math.random().toString(36).slice(2, 10);
+
 const state = {
   authed: false,
   classes: [],
@@ -21,6 +24,18 @@ function pickColor() { return PALETTE[colorIndex++ % PALETTE.length]; }
 function saveSel() { localStorage.setItem('jiafen.currentClassId', String(state.currentClassId || '')); }
 function loadSel() { const v = localStorage.getItem('jiafen.currentClassId'); return v ? Number(v) : null; }
 function getCurrentClass() { return state.classes.find(c => c.id === state.currentClassId) || null; }
+function findGroup(gid) {
+  for (const c of state.classes) {
+    const g = c.groups.find(x => x.id === gid);
+    if (g) return g;
+  }
+  return null;
+}
+function localStamp() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
 
 async function api(path, opts = {}) {
   const cfg = { ...opts, headers: { ...(opts.headers || {}) } };
@@ -223,9 +238,31 @@ function renderProjector() {
     </div>`).join('');
 }
 
+// 只更新一个小组的分数，不重建整个看板（重建会丢焦点、引发布局抖动）
+function setGroupScore(gid, score, rerender = true) {
+  const g = findGroup(gid);
+  if (g) g.score = score;
+  const el = document.querySelector('#board .group-card[data-gid="' + gid + '"] .gscore');
+  if (el) el.textContent = score;
+  if (rerender) { renderLeaderboard(); renderProjector(); }
+}
+function setGroupScores(list) {
+  (list || []).forEach(s => setGroupScore(s.id, s.score, false));
+  renderLeaderboard();
+  renderProjector();
+}
+function prependHistoryLocal(entry) {
+  state.history.unshift(entry);
+  if (state.history.length > 100) state.history.length = 100;
+  renderHistory();
+}
+
 let refreshing = false;
+let refreshQueued = false;
+let lastRefreshAt = 0;
 async function refresh() {
-  if (refreshing) return;
+  // 已有请求在跑时排队一次，而不是直接丢弃（连点时不再漏掉最新状态）
+  if (refreshing) { refreshQueued = true; return; }
   if (state.dragActive) { state.pendingRefresh = true; return; }
   refreshing = true;
   try {
@@ -235,21 +272,47 @@ async function refresh() {
     ]);
     state.classes = classes;
     state.history = history;
+    lastRefreshAt = Date.now();
     renderSidebar();
     renderMobileClassSelect();
     renderBoard();
     renderLeaderboard();
     renderHistory();
     renderProjector();
-  } catch (e) { /* 忽略瞬时错误 */ } finally { refreshing = false; }
+  } catch (e) { /* 忽略瞬时错误 */ } finally {
+    refreshing = false;
+    if (refreshQueued) { refreshQueued = false; refresh(); }
+  }
+}
+
+// 切回本页/重新聚焦时对账一次，避免长时间不刷新造成状态漂移
+function reconcileIfStale() {
+  if (Date.now() - lastRefreshAt > 20000) refresh();
 }
 
 // ---------------- 操作 ----------------
+// 记分：先本地立即生效（点击零延迟），再发请求；失败回滚
 async function addScore(gid, delta, reason = '') {
+  const g = findGroup(gid);
+  if (!g) { alert('小组不存在，请刷新页面'); return; }
+  const prev = g.score;
+  setGroupScore(gid, prev + delta);
   try {
-    await api('/api/score', { method: 'POST', body: { group_id: gid, delta, reason } });
-    refresh();
-  } catch (e) { alert(e.message); }
+    const res = await api('/api/score', {
+      method: 'POST',
+      body: { group_id: gid, delta, reason, client: CLIENT_ID },
+    });
+    if (typeof res.score === 'number') setGroupScore(gid, res.score);
+    const cls = state.classes.find(c => c.groups.includes(g));
+    prependHistoryLocal({
+      id: 'local-' + Date.now(), delta, reason, created_at: localStamp(),
+      group_id: gid, batch_id: null, group_name: g.name,
+      class_name: cls ? cls.name : '',
+    });
+  } catch (e) {
+    setGroupScore(gid, prev);
+    alert(e.message);
+  }
 }
 function applyCustom(gid) {
   const amt = $('#amount-' + gid).value.trim();
@@ -264,10 +327,29 @@ async function addClassScore(delta, reason = '') {
   const cls = getCurrentClass();
   if (!cls) { alert('请先选择班级'); return; }
   if (!cls.groups.length) { alert('这个班级还没有小组'); return; }
+  const prev = cls.groups.map(g => ({ id: g.id, score: g.score }));
+  cls.groups.forEach(g => setGroupScore(g.id, g.score + delta, false));
+  renderLeaderboard();
+  renderProjector();
   try {
-    await api('/api/classes/' + cls.id + '/score', { method: 'POST', body: { delta, reason } });
-    await refresh();
-  } catch (e) { alert(e.message); }
+    const res = await api('/api/classes/' + cls.id + '/score', {
+      method: 'POST',
+      body: { delta, reason, client: CLIENT_ID },
+    });
+    if (Array.isArray(res.scores)) setGroupScores(res.scores);
+    const batchId = res.batch_id || ('local-' + Date.now());
+    const stamp = localStamp();
+    const entries = cls.groups.map(g => ({
+      id: 'local-' + g.id + '-' + stamp, delta, reason, created_at: stamp,
+      group_id: g.id, batch_id: batchId, group_name: g.name, class_name: cls.name,
+    }));
+    entries.reverse().forEach(prependHistoryLocal);
+  } catch (e) {
+    prev.forEach(p => setGroupScore(p.id, p.score, false));
+    renderLeaderboard();
+    renderProjector();
+    alert(e.message);
+  }
 }
 function applyClassCustom() {
   const input = $('#class-amount');
@@ -279,11 +361,41 @@ function applyClassCustom() {
   input.value = '';
 }
 async function doUndo() {
+  const last = state.history[0];
+  if (!last) { alert('没有可撤销的记录'); return; }
+  // 本地先按最后一条记录回退，立即反馈
+  const targets = last.batch_id ? state.history.filter(h => h.batch_id === last.batch_id) : [last];
+  const snapshot = targets.map(h => {
+    const g = findGroup(h.group_id);
+    return { id: h.group_id, score: g ? g.score : 0 };
+  });
+  targets.forEach(h => {
+    const g = findGroup(h.group_id);
+    if (g) setGroupScore(g.id, g.score - h.delta, false);
+  });
+  renderLeaderboard();
+  renderProjector();
   try {
-    const res = await api('/api/undo', { method: 'POST' });
-    if (res.undone) await refresh();
-    else alert('没有可撤销的记录');
-  } catch (e) { alert(e.message); }
+    const res = await api('/api/undo', { method: 'POST', body: { client: CLIENT_ID } });
+    if (!res.undone) {
+      snapshot.forEach(s => setGroupScore(s.id, s.score, false));
+      renderLeaderboard();
+      renderProjector();
+      alert('没有可撤销的记录');
+      return;
+    }
+    if (Array.isArray(res.scores)) setGroupScores(res.scores);
+    state.history = last.batch_id
+      ? state.history.filter(h => h.batch_id !== last.batch_id)
+      : state.history.slice(1);
+    renderHistory();
+    refresh();   // 后台对账，不阻塞界面
+  } catch (e) {
+    snapshot.forEach(s => setGroupScore(s.id, s.score, false));
+    renderLeaderboard();
+    renderProjector();
+    alert(e.message);
+  }
 }
 function openReset() {
   const cls = getCurrentClass();
@@ -416,7 +528,48 @@ let es = null;
 function openSSE() {
   if (es) es.close();
   es = new EventSource('/api/events');
-  es.addEventListener('update', () => refresh());
+  es.addEventListener('update', (ev) => {
+    let data = {};
+    try { data = JSON.parse(ev.data || '{}'); } catch (_) { data = {}; }
+    handleRemoteUpdate(data);
+  });
+}
+
+// 其它设备的改动：能局部更新就局部更新，只有结构性变化才整页重新拉取
+function handleRemoteUpdate(data) {
+  if (data.client && data.client === CLIENT_ID) return;   // 自己的改动已本地生效
+  if (data.kind === 'score' && typeof data.score === 'number') {
+    setGroupScore(data.group_id, data.score);
+    const g = findGroup(data.group_id);
+    prependHistoryLocal({
+      id: 'remote-' + Date.now() + '-' + data.group_id, delta: data.delta,
+      reason: data.reason || '', created_at: data.at || localStamp(),
+      group_id: data.group_id, batch_id: null,
+      group_name: g ? g.name : '', class_name: '',
+    });
+    return;
+  }
+  if (data.kind === 'class_score' && Array.isArray(data.scores)) {
+    setGroupScores(data.scores);
+    const stamp = data.at || localStamp();
+    const entries = data.scores.map(s => {
+      const g = findGroup(s.id);
+      return {
+        id: 'remote-' + s.id + '-' + stamp, delta: data.delta,
+        reason: data.reason || '', created_at: stamp,
+        group_id: s.id, batch_id: data.batch_id || ('remote-' + stamp),
+        group_name: g ? g.name : '', class_name: '',
+      };
+    });
+    entries.reverse().forEach(prependHistoryLocal);
+    return;
+  }
+  if (data.kind === 'undo') {
+    if (Array.isArray(data.scores)) setGroupScores(data.scores);
+    refresh();   // 历史记录需要对账
+    return;
+  }
+  refresh();
 }
 async function bootstrap() {
   state.authed = true;
@@ -593,5 +746,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('pointermove', onDocPointerMove);
   document.addEventListener('pointerup', onDocPointerUp);
   document.addEventListener('pointercancel', onDocPointerUp);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) reconcileIfStale(); });
+  window.addEventListener('focus', reconcileIfStale);
   init();
 });

@@ -136,8 +136,15 @@ class EventBroker:
 BROKER = EventBroker()
 
 
-def broadcast():
-    BROKER.publish("update", {"time": datetime.now().isoformat()})
+def broadcast(payload=None):
+    """推送变更给所有在线设备。
+
+    payload 里带 kind/client/score 等字段时，前端可以只做局部更新，不必整页重新拉取。
+    """
+    data = {"time": datetime.now().isoformat()}
+    if payload:
+        data.update(payload)
+    BROKER.publish("update", data)
 
 
 @app.route("/api/events")
@@ -369,8 +376,20 @@ def add_score():
     )
     db.execute("UPDATE groups SET score = score + ? WHERE id=?", (delta, gid))
     db.commit()
-    broadcast()
-    return jsonify({"ok": True})
+    new_score = db.execute("SELECT score FROM groups WHERE id=?", (gid,)).fetchone()["score"]
+    broadcast(
+        {
+            "kind": "score",
+            "client": (data.get("client") or "")[:32],
+            "group_id": gid,
+            "class_id": row["class_id"],
+            "delta": delta,
+            "score": new_score,
+            "reason": reason,
+            "at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        }
+    )
+    return jsonify({"ok": True, "score": new_score})
 
 
 @app.route("/api/classes/<int:cid>/score", methods=["POST"])
@@ -398,13 +417,36 @@ def add_class_score(cid):
         )
     db.execute("UPDATE groups SET score = score + ? WHERE class_id=?", (delta, cid))
     db.commit()
-    broadcast()
-    return jsonify({"ok": True, "count": len(groups), "delta": delta, "batch_id": batch_id})
+    rows = db.execute("SELECT id, score FROM groups WHERE class_id=?", (cid,)).fetchall()
+    scores = [{"id": r["id"], "score": r["score"]} for r in rows]
+    broadcast(
+        {
+            "kind": "class_score",
+            "client": (data.get("client") or "")[:32],
+            "class_id": cid,
+            "delta": delta,
+            "batch_id": batch_id,
+            "scores": scores,
+            "reason": reason,
+            "at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        }
+    )
+    return jsonify(
+        {
+            "ok": True,
+            "count": len(scores),
+            "delta": delta,
+            "batch_id": batch_id,
+            "scores": scores,
+        }
+    )
 
 
 @app.route("/api/undo", methods=["POST"])
 @login_required
 def undo():
+    data = request.get_json(silent=True) or {}
+    client = (data.get("client") or "")[:32]
     db = get_db()
     t = db.execute(
         "SELECT id, group_id, delta, batch_id FROM transactions ORDER BY id DESC LIMIT 1"
@@ -420,7 +462,8 @@ def undo():
             db.execute("UPDATE groups SET score = score - ? WHERE id=?", (r["delta"], r["group_id"]))
         db.execute("DELETE FROM transactions WHERE batch_id=?", (t["batch_id"],))
         db.commit()
-        broadcast()
+        scores = _group_scores(db, [r["group_id"] for r in rows])
+        broadcast({"kind": "undo", "client": client, "scores": scores})
         return jsonify(
             {
                 "ok": True,
@@ -429,13 +472,23 @@ def undo():
                 "count": len(rows),
                 "delta": t["delta"],
                 "group_ids": [r["group_id"] for r in rows],
+                "scores": scores,
             }
         )
     db.execute("UPDATE groups SET score = score - ? WHERE id=?", (t["delta"], t["group_id"]))
     db.execute("DELETE FROM transactions WHERE id=?", (t["id"],))
     db.commit()
-    broadcast()
-    return jsonify({"ok": True, "undone": True, "group_id": t["group_id"]})
+    scores = _group_scores(db, [t["group_id"]])
+    broadcast({"kind": "undo", "client": client, "scores": scores})
+    return jsonify({"ok": True, "undone": True, "group_id": t["group_id"], "scores": scores})
+
+
+def _group_scores(db, gids):
+    if not gids:
+        return []
+    marks = ",".join("?" * len(gids))
+    rows = db.execute("SELECT id, score FROM groups WHERE id IN (%s)" % marks, gids).fetchall()
+    return [{"id": r["id"], "score": r["score"]} for r in rows]
 
 
 @app.route("/api/history")
@@ -519,6 +572,6 @@ if __name__ == "__main__":
     try:
         from waitress import serve
 
-        serve(app, host="0.0.0.0", port=port, threads=16)
+        serve(app, host="0.0.0.0", port=port, threads=64)
     except ImportError:
         app.run(host="0.0.0.0", port=port, debug=False, threaded=True)
