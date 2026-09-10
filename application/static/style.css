@@ -410,13 +410,12 @@ input:focus { outline: none; border-color: var(--brand); }
   font-weight: 800;
   padding: 10px 20px;
   border-radius: 10px;
-  border: 1px solid transparent;
+  background: rgba(255,255,255,.08);
+  color: #e8edf7;
+  border: 1px solid rgba(255,255,255,.2);
   min-width: 74px;
 }
-.proj-card .pbtn.plus { background: rgba(16,185,129,.18); color: #6ee7b7; border-color: rgba(16,185,129,.38); }
-.proj-card .pbtn.plus:hover { background: rgba(16,185,129,.3); }
-.proj-card .pbtn.minus { background: rgba(244,63,94,.18); color: #fda4af; border-color: rgba(244,63,94,.38); }
-.proj-card .pbtn.minus:hover { background: rgba(244,63,94,.3); }
+.proj-card .pbtn:hover { background: rgba(255,255,255,.16); }
 
 /* 拖拽调序 */
 .group-card { user-select: none; }
