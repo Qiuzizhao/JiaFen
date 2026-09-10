@@ -88,6 +88,21 @@ input:focus { outline: none; border-color: var(--brand); }
 .login-box input { width: 100%; margin: 16px 0 12px; }
 .login-box button { width: 100%; }
 
+/* 伪装成账号框，只用来告诉浏览器密码管理器「用户名在这里」，
+   避免它把密码本身当成用户名显示在保存提示里。离屏 + 透明，用户看不到也点不到。 */
+.autofill-decoy {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+input.masked { -webkit-text-security: disc; }
+
 /* 顶栏 */
 .topbar {
   display: flex; align-items: center; justify-content: space-between;

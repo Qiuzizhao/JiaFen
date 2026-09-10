@@ -74,6 +74,25 @@ function showApp() {
   $('#app').classList.remove('hidden');
 }
 
+// 浏览器会把「只有密码框、没有账号框」的表单当成登录表单，保存提示里还会把
+// 密码本身当成用户名显示出来。处理办法：
+// 1) 页面里放一个离屏的账号框（值是「管理员」），密码管理器优先用它当用户名；
+// 2) 支持的浏览器把密码框改成普通文本框 + CSS 打码，密码管理器就完全不认它，
+//    连保存提示都不会弹（不支持的浏览器保持原生密码框，靠第 1 条兜底）。
+function hardenPasswordFields() {
+  const canMask = !!(window.CSS && CSS.supports && CSS.supports('-webkit-text-security', 'disc'));
+  ['#login-pw', '#reset-pw'].forEach(sel => {
+    const el = $(sel);
+    if (!el || el.dataset.hardened) return;
+    el.dataset.hardened = '1';
+    el.setAttribute('autocomplete', 'off');
+    el.setAttribute('spellcheck', 'false');
+    el.setAttribute('autocapitalize', 'off');
+    el.setAttribute('autocorrect', 'off');
+    if (canMask) { el.type = 'text'; el.classList.add('masked'); }
+  });
+}
+
 // 移动端班级弹窗（桌面端这些函数为空操作）
 function openMobileClassPanel() {
   $('#class-backdrop').classList.add('open');
@@ -460,6 +479,7 @@ async function confirmReset() {
   const pw = $('#reset-pw').value;
   try {
     await api('/api/classes/' + cls.id + '/reset', { method: 'POST', body: { password: pw } });
+    $('#reset-pw').value = '';
     closeReset();
     await refresh();
   } catch (e) {
@@ -560,6 +580,7 @@ async function doLogin() {
   const pw = $('#login-pw').value;
   try {
     await api('/api/login', { method: 'POST', body: { password: pw } });
+    $('#login-pw').value = '';   // 登录成功后立刻清空，别把密码留在输入框里
     await bootstrap();
   } catch (e) { $('#login-err').textContent = e.message; }
 }
@@ -941,6 +962,7 @@ async function commitOrder() {
 
 // ---------------- 绑定 ----------------
 document.addEventListener('DOMContentLoaded', () => {
+  hardenPasswordFields();
   $('#login-btn').addEventListener('click', doLogin);
   $('#login-pw').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
   $('#btn-logout').addEventListener('click', doLogout);
