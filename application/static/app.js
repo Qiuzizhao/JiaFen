@@ -739,8 +739,11 @@ function pickVoice() {
   if (!voices.length) return null;
   const zh = voices.filter(v => /^zh/i.test(v.lang));
   const pool = zh.length ? zh : voices;
-  return pool.find(v => /zh[-_]CN/i.test(v.lang) && /xiaoxiao|yunxi|huihui|yaoyao|kangkang|xiaoyi|tingting|female/i.test(v.name))
-    || pool.find(v => /zh[-_]CN/i.test(v.lang))
+  const zhCN = pool.filter(v => /zh[-_]CN/i.test(v.lang));
+  // 在线/自然音色（如 Microsoft Xiaoxiao Online）通常比本地老音色更响亮清晰，优先用
+  return zhCN.find(v => /online|natural/i.test(v.name))
+    || zhCN.find(v => /xiaoxiao|yunxi|huihui|yaoyao|kangkang|xiaoyi|tingting|female/i.test(v.name))
+    || zhCN[0]
     || pool[0];
 }
 
@@ -805,6 +808,7 @@ function renderVoiceButtons() {
 }
 
 function setVoiceOn(on) {
+  const was = voiceOn;
   voiceOn = !!on;
   localStorage.setItem(VOICE_KEY, voiceOn ? '1' : '0');
   if (!voiceOn) {
@@ -815,6 +819,8 @@ function setVoiceOn(on) {
     if (voiceSupported()) { try { speechSynthesis.cancel(); } catch (_) {} }
   }
   renderVoiceButtons();
+  // 打开时念一句试听，方便当场确认音量和音色
+  if (voiceOn && !was) speak('语音播报已开启');
 }
 
 // ---------------- 长按拖拽排序 ----------------
