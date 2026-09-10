@@ -236,20 +236,16 @@ function renderHistory() {
   }).join('');
 }
 
-let projOrder = null;
-function renderProjector(forceSort = false) {
+function renderProjector() {
   const cls = getCurrentClass();
   const el = $('#projector-board');
   const title = $('#projector-title');
-  if (!cls) { title.textContent = '课堂小组积分'; el.innerHTML = ''; projOrder = null; return; }
+  if (!cls) { title.textContent = '课堂小组积分'; el.innerHTML = ''; return; }
   title.textContent = cls.name;
-  if (!cls.groups.length) { el.innerHTML = '<div class="empty">暂无小组</div>'; projOrder = null; return; }
-  const sorted = [...cls.groups].sort((a, b) => b.score - a.score);
-  const leaderId = sorted[0].id;
-  const valid = projOrder && projOrder.length === cls.groups.length
-    && projOrder.every(id => cls.groups.some(g => g.id === id));
-  const order = (!forceSort && valid) ? projOrder.map(id => cls.groups.find(g => g.id === id)) : sorted;
-  if (forceSort || !valid) projOrder = order.map(g => g.id);
+  if (!cls.groups.length) { el.innerHTML = '<div class="empty">暂无小组</div>'; return; }
+  // Projector board lists groups in their fixed custom order (backend returns sort_order), not by score.
+  const leaderId = [...cls.groups].sort((a, b) => b.score - a.score)[0].id;
+  const order = cls.groups;
   el.innerHTML = order.map(g => `
     <div class="proj-card ${g.id === leaderId ? 'first' : ''}" data-gid="${g.id}" style="--c:${esc(g.color)}">
       <div class="p-name">${esc(g.name)}</div>
@@ -677,7 +673,7 @@ async function init() {
 
 // ---------------- 投屏 ----------------
 function openProjector() {
-  renderProjector(true);
+  renderProjector();
   $('#projector').classList.remove('hidden');
 }
 function closeProjector() { $('#projector').classList.add('hidden'); }
