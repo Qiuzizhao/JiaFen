@@ -244,10 +244,9 @@ function renderProjector() {
   title.textContent = cls.name;
   if (!cls.groups.length) { el.innerHTML = '<div class="empty">暂无小组</div>'; return; }
   // Projector board lists groups in their fixed custom order (backend returns sort_order), not by score.
-  const leaderId = [...cls.groups].sort((a, b) => b.score - a.score)[0].id;
   const order = cls.groups;
   el.innerHTML = order.map(g => `
-    <div class="proj-card ${g.id === leaderId ? 'first' : ''}" data-gid="${g.id}" style="--c:${esc(g.color)}">
+    <div class="proj-card" data-gid="${g.id}" style="--c:${esc(g.color)}">
       <div class="p-name">${esc(g.name)}</div>
       <div class="p-score">${g.score}</div>
       <div class="p-actions">
