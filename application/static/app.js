@@ -965,6 +965,8 @@ document.addEventListener('DOMContentLoaded', () => {
   if (voiceSupported()) {
     $('#btn-voice').addEventListener('click', () => setVoiceOn(!voiceOn));
     $('#projector-voice').addEventListener('click', () => setVoiceOn(!voiceOn));
+    // 部分浏览器首次取语音列表为空，等 voiceschanged 后再预热一次
+    if (!speechSynthesis.getVoices().length) speechSynthesis.onvoiceschanged = () => { pickVoice(); };
   } else {
     $('#btn-voice').classList.add('hidden');
     $('#projector-voice').classList.add('hidden');
