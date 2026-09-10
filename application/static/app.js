@@ -220,7 +220,6 @@ function renderLeaderboard() {
       tag: c.name,
       color: (c.groups[0] && c.groups[0].color) || '#3b82f6',
       score: c.groups.reduce((sum, g) => sum + g.score, 0),
-      count: c.groups.length,
     }));
   } else {
     const cls = getCurrentClass();
@@ -232,7 +231,7 @@ function renderLeaderboard() {
     <div class="lb-item ${i < 3 ? 'rank' + (i + 1) : ''}" style="--c:${esc(g.color)}">
       <span class="rank">${medals[i] || (i + 1)}</span>
       <span class="dot"></span>
-      <span class="lb-name" title="${esc(g.tag)}">${esc(g.tag)}${g.count ? `<em class="lb-sub">${g.count} 组</em>` : ''}</span>
+      <span class="lb-name" title="${esc(g.tag)}">${esc(g.tag)}</span>
       <span class="lb-score">${g.score}</span>
     </div>`).join('');
 }
