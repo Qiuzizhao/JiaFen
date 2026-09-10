@@ -332,6 +332,7 @@ input:focus { outline: none; border-color: var(--brand); }
 .lb-item .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--c); flex: none; }
 .lb-item .lb-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lb-item .lb-score { font-weight: 700; }
+.lb-item .lb-sub { font-style: normal; font-size: 11px; color: var(--muted); margin-left: 6px; }
 .lb-toggle {
   margin-left: auto;
   display: flex;
