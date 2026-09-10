@@ -773,7 +773,7 @@ function flushVoicePending() {
   const p = voicePending;
   voicePending = null;
   if (!p) return;
-  speak(p.label + (p.sign > 0 ? '加' : '减') + cnNum(p.amount) + '分');
+  speak(p.label + (p.sign > 0 ? '加' : '扣') + cnNum(p.amount) + '分');
 }
 
 // label 用小组名或「全班」
