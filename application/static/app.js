@@ -345,6 +345,7 @@ async function addScore(gid, delta, reason = '') {
   if (!g) { alert('小组不存在，请刷新页面'); return; }
   const prev = g.score;
   setGroupScore(gid, prev + delta);
+  announceScore(g.name, delta);
   try {
     const res = await api('/api/score', {
       method: 'POST',
@@ -378,6 +379,7 @@ async function addClassScore(delta, reason = '') {
   const prev = cls.groups.map(g => ({ id: g.id, score: g.score }));
   cls.groups.forEach(g => setGroupScore(g.id, g.score + delta, false));
   refreshScoreViews();
+  announceScore('全班', delta);
   try {
     const res = await api('/api/classes/' + cls.id + '/score', {
       method: 'POST',
@@ -648,6 +650,7 @@ function handleRemoteUpdate(data) {
     setGroupScore(data.group_id, data.score);
     const g = findGroup(data.group_id);
     const cls = findClassOfGroup(data.group_id);
+    announceScore(g ? g.name : '小组', data.delta);
     prependHistoryLocal({
       id: 'remote-' + Date.now() + '-' + data.group_id, delta: data.delta,
       reason: data.reason || '', created_at: data.at || localStamp(),
@@ -658,6 +661,7 @@ function handleRemoteUpdate(data) {
   }
   if (data.kind === 'class_score' && Array.isArray(data.scores)) {
     setGroupScores(data.scores);
+    announceScore('全班', data.delta);
     const stamp = data.at || localStamp();
     const cls = state.classes.find(c => c.id === data.class_id);
     const entries = data.scores.map(s => {
@@ -701,6 +705,117 @@ function openProjector() {
   $('#projector').classList.remove('hidden');
 }
 function closeProjector() { $('#projector').classList.add('hidden'); }
+
+// ---------------- 语音播报（浏览器自带 TTS） ----------------
+const VOICE_KEY = 'jiafen.voiceOn';
+const VOICE_MERGE_MS = 500;        // 连点合并窗口：同一对象同方向的连续操作合成一句
+let voiceOn = localStorage.getItem(VOICE_KEY) === '1';
+let voiceQueue = [];
+let voiceSpeaking = false;
+let voicePending = null;
+let voiceTimer = null;
+
+function voiceSupported() {
+  return typeof speechSynthesis !== 'undefined' && typeof SpeechSynthesisUtterance !== 'undefined';
+}
+
+// 分数读成中文，避免个别语音包把数字念成英文
+function cnNum(n) {
+  const d = '零一二三四五六七八九';
+  n = Math.abs(Math.round(n));
+  if (n < 10) return d[n];
+  if (n < 20) return '十' + (n % 10 ? d[n % 10] : '');
+  if (n < 100) return d[Math.floor(n / 10)] + '十' + (n % 10 ? d[n % 10] : '');
+  if (n < 1000) {
+    const rest = n % 100;
+    return d[Math.floor(n / 100)] + '百' + (rest === 0 ? '' : rest < 10 ? '零' + d[rest] : cnNum(rest));
+  }
+  return String(n);
+}
+
+function pickVoice() {
+  if (!voiceSupported()) return null;
+  const voices = speechSynthesis.getVoices() || [];
+  if (!voices.length) return null;
+  const zh = voices.filter(v => /^zh/i.test(v.lang));
+  const pool = zh.length ? zh : voices;
+  return pool.find(v => /zh[-_]CN/i.test(v.lang) && /xiaoxiao|yunxi|huihui|yaoyao|kangkang|xiaoyi|tingting|female/i.test(v.name))
+    || pool.find(v => /zh[-_]CN/i.test(v.lang))
+    || pool[0];
+}
+
+function drainVoiceQueue() {
+  if (voiceSpeaking || !voiceQueue.length || !voiceSupported()) return;
+  voiceSpeaking = true;
+  const text = voiceQueue.shift();
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = 'zh-CN';
+  const v = pickVoice();
+  if (v) u.voice = v;
+  u.rate = 1.1;
+  u.pitch = 1;
+  u.volume = 1;
+  const done = () => { voiceSpeaking = false; drainVoiceQueue(); };
+  u.onend = done;
+  u.onerror = done;
+  try { speechSynthesis.speak(u); } catch (_) { done(); }
+}
+
+function speak(text) {
+  if (!voiceOn || !voiceSupported()) return;
+  if (voiceQueue.length > 5) voiceQueue.length = 5;   // 积压太多就丢弃，避免无限延迟
+  voiceQueue.push(text);
+  drainVoiceQueue();
+}
+
+function flushVoicePending() {
+  clearTimeout(voiceTimer);
+  const p = voicePending;
+  voicePending = null;
+  if (!p) return;
+  speak(p.label + (p.sign > 0 ? '加' : '减') + cnNum(p.amount) + '分');
+}
+
+// label 用小组名或「全班」
+function announceScore(label, delta) {
+  if (!voiceOn || !voiceSupported() || !delta) return;
+  const sign = delta > 0 ? 1 : -1;
+  if (voicePending && voicePending.label === label && voicePending.sign === sign) {
+    voicePending.amount += Math.abs(delta);
+  } else {
+    flushVoicePending();
+    voicePending = { label, sign, amount: Math.abs(delta) };
+  }
+  clearTimeout(voiceTimer);
+  voiceTimer = setTimeout(flushVoicePending, VOICE_MERGE_MS);
+}
+
+function renderVoiceButtons() {
+  const top = $('#btn-voice');
+  if (top) {
+    top.classList.toggle('voice-on', voiceOn);
+    top.textContent = voiceOn ? '🔊 语音播报' : '🔈 语音播报';
+    top.title = voiceOn ? '语音播报已开启，点一下关闭' : '语音播报已关闭，点一下开启';
+  }
+  const pj = $('#projector-voice');
+  if (pj) {
+    pj.classList.toggle('voice-on', voiceOn);
+    pj.textContent = voiceOn ? '🔊 语音：开' : '🔈 语音：关';
+  }
+}
+
+function setVoiceOn(on) {
+  voiceOn = !!on;
+  localStorage.setItem(VOICE_KEY, voiceOn ? '1' : '0');
+  if (!voiceOn) {
+    voiceQueue = [];
+    voicePending = null;
+    clearTimeout(voiceTimer);
+    voiceSpeaking = false;
+    if (voiceSupported()) { try { speechSynthesis.cancel(); } catch (_) {} }
+  }
+  renderVoiceButtons();
+}
 
 // ---------------- 长按拖拽排序 ----------------
 let drag = null;
@@ -847,6 +962,14 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#lb-class-btn').addEventListener('click', () => setLeaderboardMode('class'));
   $('#lb-school-btn').addEventListener('click', () => setLeaderboardMode('school'));
   $('#lb-classes-btn').addEventListener('click', () => setLeaderboardMode('classes'));
+  if (voiceSupported()) {
+    $('#btn-voice').addEventListener('click', () => setVoiceOn(!voiceOn));
+    $('#projector-voice').addEventListener('click', () => setVoiceOn(!voiceOn));
+  } else {
+    $('#btn-voice').classList.add('hidden');
+    $('#projector-voice').classList.add('hidden');
+  }
+  renderVoiceButtons();
   $('#btn-export').addEventListener('click', doExport);
   $('#btn-import').addEventListener('click', doImport);
   $('#import-file').addEventListener('change', handleImportFile);

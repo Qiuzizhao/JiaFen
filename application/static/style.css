@@ -49,6 +49,8 @@ button.ghost {
   font-weight: 500;
 }
 button.ghost:hover { background: #e2e7f0; }
+button.voice-on { background: #e3edff; color: var(--brand-dark); }
+button.voice-on:hover { background: #d3e2ff; }
 button.danger-ghost { color: var(--down); background: #fdeef0; }
 button.danger-ghost:hover { background: #fbd9dd; }
 .icon-btn { background: transparent; color: var(--muted); font-size: 14px; width: 26px; height: 26px; border-radius: 6px; }
@@ -177,6 +179,8 @@ input:focus { outline: none; border-color: var(--brand); }
   .proj-card .p-name { font-size: 18px; }
   .proj-card .p-score { font-size: 44px; margin-top: 4px; }
   .close-btn { top: 12px; right: 14px; padding: 8px 12px; font-size: 14px; }
+  .proj-tools { top: 12px; right: 14px; }
+  .proj-tools .close-btn { padding: 8px 12px; font-size: 14px; }
   /* 顶部操作：隐藏导出/导入；显示“班级”按钮 */
   #btn-classes { display: inline-flex; }
   #btn-export, #btn-import { display: none; }
@@ -381,6 +385,10 @@ input:focus { outline: none; border-color: var(--brand); }
   padding: 10px 16px; font-size: 15px;
 }
 .close-btn:hover { background: rgba(255,255,255,.2); }
+.proj-tools { position: absolute; top: 20px; right: 24px; display: flex; gap: 10px; z-index: 2; }
+.proj-tools .close-btn { position: static; }
+.close-btn.voice-on { background: rgba(59,130,246,.5); }
+.close-btn.voice-on:hover { background: rgba(59,130,246,.65); }
 .projector-title { font-size: 30px; font-weight: 800; text-align: center; margin-bottom: 24px; }
 .projector-board {
   flex: 1;
