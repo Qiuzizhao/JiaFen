@@ -127,15 +127,35 @@ function schoolRankMap() {
   return m;
 }
 
+const RANK_MEDALS = ['🥇', '🥈', '🥉'];
+function rankBadgeHTML(rk) {
+  const medal = rk <= 3 ? `<span class="rk-medal">${RANK_MEDALS[rk - 1]}</span>` : '';
+  return `<div class="school-rank rk${Math.min(rk, 3)}" title="全校排名第 ${rk} 名">${medal}<span class="rk-num">#${rk}</span></div>`;
+}
+
+// 分数变化后只原位刷新卡片右下角的全校排名角标，不重建整个看板
+function updateSchoolRanks() {
+  const ranks = schoolRankMap();
+  document.querySelectorAll('#board .group-card').forEach(card => {
+    const rk = ranks.get(Number(card.dataset.gid));
+    const badge = card.querySelector('.school-rank');
+    if (rk == null) { if (badge) badge.remove(); return; }
+    if (badge) badge.outerHTML = rankBadgeHTML(rk);
+    else card.insertAdjacentHTML('beforeend', rankBadgeHTML(rk));
+  });
+}
+
+// 分数变动后统一刷新：排行榜 + 投屏 + 全校排名角标
+function refreshScoreViews() {
+  renderLeaderboard();
+  renderProjector();
+  updateSchoolRanks();
+}
+
 function groupCard(g, ranks) {
   const q = [[1, '+1'], [2, '+2'], [5, '+5'], [-1, '-1'], [-2, '-2'], [-5, '-5']];
   const rk = ranks.get(g.id);
-  const rankBadge = rk != null
-    ? `<div class="school-rank rk${Math.min(rk, 3)}" title="全校排名第 ${rk} 名">
-        ${rk <= 3 ? `<span class="rk-medal">${['🥇', '🥈', '🥉'][rk - 1]}</span>` : ''}
-        <span class="rk-num">#${rk}</span>
-      </div>`
-    : '';
+  const rankBadge = rk != null ? rankBadgeHTML(rk) : '';
   return `
   <div class="group-card" data-gid="${g.id}" style="--c:${esc(g.color)}">
     <div class="group-head">
@@ -274,12 +294,11 @@ function setGroupScore(gid, score, rerender = true) {
   if (g) g.score = score;
   const el = document.querySelector('#board .group-card[data-gid="' + gid + '"] .gscore');
   if (el) el.textContent = score;
-  if (rerender) { renderLeaderboard(); renderProjector(); }
+  if (rerender) refreshScoreViews();
 }
 function setGroupScores(list) {
   (list || []).forEach(s => setGroupScore(s.id, s.score, false));
-  renderLeaderboard();
-  renderProjector();
+  refreshScoreViews();
 }
 function prependHistoryLocal(entry) {
   state.history.unshift(entry);
@@ -359,8 +378,7 @@ async function addClassScore(delta, reason = '') {
   if (!cls.groups.length) { alert('这个班级还没有小组'); return; }
   const prev = cls.groups.map(g => ({ id: g.id, score: g.score }));
   cls.groups.forEach(g => setGroupScore(g.id, g.score + delta, false));
-  renderLeaderboard();
-  renderProjector();
+  refreshScoreViews();
   try {
     const res = await api('/api/classes/' + cls.id + '/score', {
       method: 'POST',
@@ -376,8 +394,7 @@ async function addClassScore(delta, reason = '') {
     entries.reverse().forEach(prependHistoryLocal);
   } catch (e) {
     prev.forEach(p => setGroupScore(p.id, p.score, false));
-    renderLeaderboard();
-    renderProjector();
+    refreshScoreViews();
     alert(e.message);
   }
 }
@@ -403,14 +420,12 @@ async function doUndo() {
     const g = findGroup(h.group_id);
     if (g) setGroupScore(g.id, g.score - h.delta, false);
   });
-  renderLeaderboard();
-  renderProjector();
+  refreshScoreViews();
   try {
     const res = await api('/api/undo', { method: 'POST', body: { client: CLIENT_ID } });
     if (!res.undone) {
       snapshot.forEach(s => setGroupScore(s.id, s.score, false));
-      renderLeaderboard();
-      renderProjector();
+      refreshScoreViews();
       alert('没有可撤销的记录');
       return;
     }
@@ -422,8 +437,7 @@ async function doUndo() {
     refresh();   // 后台对账，不阻塞界面
   } catch (e) {
     snapshot.forEach(s => setGroupScore(s.id, s.score, false));
-    renderLeaderboard();
-    renderProjector();
+    refreshScoreViews();
     alert(e.message);
   }
 }
