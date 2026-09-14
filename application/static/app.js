@@ -70,7 +70,6 @@ function showLogin() {
   $('#login').classList.remove('hidden');
   $('#login-pw').value = '';
   $('#reg-pw').value = '';
-  $('#reg-code').value = '';
   showLoginView(true);
   $('#login-err').textContent = '';
 }
@@ -88,7 +87,7 @@ function hardenPasswordFields() {
   const canMask = !!(window.CSS && CSS.supports && CSS.supports('-webkit-text-security', 'disc'));
   // 登录框现在有真正的用户名字段，交给浏览器正常保存即可；
   // 这里只处理「没有用户名、要求重新输密码」的框，避免浏览器把它们当登录表单存起来
-  ['#reset-pw', '#pw-old', '#pw-new', '#reg-pw', '#reg-code'].forEach(sel => {
+  ['#reset-pw', '#pw-old', '#pw-new', '#reg-pw'].forEach(sel => {
     const el = $(sel);
     if (!el || el.dataset.hardened) return;
     el.dataset.hardened = '1';
@@ -649,13 +648,11 @@ async function doRegister() {
   const username = $('#reg-name').value.trim();
   const display_name = $('#reg-display').value.trim();
   const password = $('#reg-pw').value;
-  const code = $('#reg-code').value;
   if (!username || !password) { $('#login-err').textContent = '请填写用户名和密码'; return; }
   try {
-    const res = await api('/api/register', { method: 'POST', body: { username, display_name, password, code } });
+    const res = await api('/api/register', { method: 'POST', body: { username, display_name, password } });
     state.user = res.user || null;
     $('#reg-pw').value = '';
-    $('#reg-code').value = '';
     showLoginView(true);   // 收起注册表单
     await bootstrap();
   } catch (e) { $('#login-err').textContent = e.message; }
@@ -1072,7 +1069,7 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#show-register').addEventListener('click', e => { e.preventDefault(); showLoginView(false); });
   $('#show-login').addEventListener('click', e => { e.preventDefault(); showLoginView(true); });
   $('#register-btn').addEventListener('click', doRegister);
-  $('#reg-code').addEventListener('keydown', e => { if (e.key === 'Enter') doRegister(); });
+  $('#reg-pw').addEventListener('keydown', e => { if (e.key === 'Enter') doRegister(); });
   $('#btn-undo').addEventListener('click', doUndo);
   $('#lb-class-btn').addEventListener('click', () => setLeaderboardMode('class'));
   $('#lb-school-btn').addEventListener('click', () => setLeaderboardMode('school'));

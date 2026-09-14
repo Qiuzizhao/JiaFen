@@ -5,7 +5,6 @@ import re
 import sqlite3
 import threading
 import time
-import hmac
 import uuid
 from datetime import datetime, timedelta
 from functools import wraps
@@ -20,10 +19,13 @@ DB_DIR = os.path.join(BASE_DIR, "data")
 DB_PATH = os.environ.get("JIAFEN_DB_PATH") or os.path.join(DB_DIR, "jiafen.db")
 
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "jiafen123")
-# 没有管理员角色：新账号自己在登录页注册，注册时要填这个口令（默认就是 .env 里的那个密码）
-REGISTER_CODE = os.environ.get("REGISTER_CODE") or ADMIN_PASSWORD
 # 启用账号系统时自动创建的第一个账号（现有班级都归它），用户名可以用环境变量改
 FIRST_USER = os.environ.get("FIRST_USER") or "admin"
+# 开放注册：任何人都能自己开账号，只做一层宽松的防刷（同一 IP 每小时最多注册几个）
+# 学校网络常常共用出口 IP，所以默认给得比较宽；设成 0 表示完全不限制
+REGISTER_PER_IP_LIMIT = int(os.environ.get("REGISTER_PER_IP_LIMIT", "30"))
+REGISTER_WINDOW = 3600
+_REGISTER_HITS = {}
 
 
 app = Flask(__name__, static_folder="static", static_url_path="")
@@ -352,6 +354,29 @@ def _login_ok(key):
         _LOGIN_FAILS.pop(key, None)
 
 
+def _client_ip():
+    return (request.headers.get("X-Forwarded-For") or request.remote_addr or "").split(",")[0].strip()
+
+
+def _register_allowed():
+    if REGISTER_PER_IP_LIMIT <= 0:
+        return True
+    ip = _client_ip()
+    now = time.time()
+    with _LOGIN_LOCK:
+        hits = [t for t in _REGISTER_HITS.get(ip, []) if now - t < REGISTER_WINDOW]
+        _REGISTER_HITS[ip] = hits
+        return len(hits) < REGISTER_PER_IP_LIMIT
+
+
+def _register_hit():
+    if REGISTER_PER_IP_LIMIT <= 0:
+        return
+    ip = _client_ip()
+    with _LOGIN_LOCK:
+        _REGISTER_HITS.setdefault(ip, []).append(time.time())
+
+
 @app.route("/api/me")
 def me():
     u = current_user()
@@ -407,22 +432,16 @@ def change_my_password():
 
 
 # ---------------------------------------------------------------------------
-# 注册（没有管理员角色，老师自己注册，注册口令对了才能建号）
+# 注册（没有管理员角色，任何人都能自己开账号）
 # ---------------------------------------------------------------------------
 @app.route("/api/register", methods=["POST"])
 def register():
     data = request.get_json(silent=True) or {}
     username = (data.get("username") or "").strip()
     pw = data.get("password") or ""
-    code = data.get("code") or ""
     display = (data.get("display_name") or "").strip() or username
-    key = _login_key("register")
-    wait = _login_blocked(key)
-    if wait:
-        return jsonify({"error": "尝试次数过多，请 %d 秒后再试" % wait}), 429
-    if not hmac.compare_digest(code, REGISTER_CODE):
-        _login_fail(key)
-        return jsonify({"error": "注册口令不正确"}), 403
+    if not _register_allowed():
+        return jsonify({"error": "注册太频繁了，过一会儿再试"}), 429
     if len(username) < 2:
         return jsonify({"error": "用户名至少 2 个字符"}), 400
     if not re.match(r"^[\w\u4e00-\u9fa5.-]+$", username):
@@ -437,7 +456,7 @@ def register():
         (username, display, hash_password(pw)),
     )
     db.commit()
-    _login_ok(key)
+    _register_hit()
     session.permanent = True
     session["uid"] = cur.lastrowid
     return jsonify({"ok": True, "user": {"id": cur.lastrowid, "username": username, "display_name": display}})
