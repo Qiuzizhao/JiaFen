@@ -20,7 +20,7 @@ DB_PATH = os.environ.get("JIAFEN_DB_PATH") or os.path.join(DB_DIR, "jiafen.db")
 
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "jiafen123")
 # 启用账号系统时自动创建的第一个账号（现有班级都归它），用户名可以用环境变量改
-FIRST_USER = os.environ.get("FIRST_USER") or "admin"
+FIRST_USER = os.environ.get("FIRST_USER") or "Qiuzizhao"
 # 开放注册：任何人都能自己开账号，只做一层宽松的防刷（同一 IP 每小时最多注册几个）
 # 学校网络常常共用出口 IP，所以默认给得比较宽；设成 0 表示完全不限制
 REGISTER_PER_IP_LIMIT = int(os.environ.get("REGISTER_PER_IP_LIMIT", "30"))
