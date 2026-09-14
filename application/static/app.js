@@ -803,7 +803,10 @@ function closeProjector() { $('#projector').classList.add('hidden'); }
 // ---------------- 语音播报（浏览器自带 TTS） ----------------
 const VOICE_KEY = 'jiafen.voiceOn';
 const VOICE_MERGE_MS = 500;        // 连点合并窗口：同一对象同方向的连续操作合成一句
-let voiceOn = localStorage.getItem(VOICE_KEY) === '1';
+// 默认开启：只有本机明确关过（存了 '0'）才保持关闭
+const voiceStored = localStorage.getItem(VOICE_KEY);
+let voiceOn = voiceStored === null ? true : voiceStored === '1';
+let voicePrimed = false;
 let voiceQueue = [];
 let voiceSpeaking = false;
 let voicePending = null;
@@ -863,6 +866,22 @@ function speak(text) {
   if (voiceQueue.length > 5) voiceQueue.length = 5;   // 积压太多就丢弃，避免无限延迟
   voiceQueue.push(text);
   drainVoiceQueue();
+}
+
+// 浏览器要求页面被用户操作过才允许发声。默认开启时，第一次点击/按键先放一条
+// 静音语音解锁，这样即使第一条播报是别台设备触发的，也能正常出声。
+function primeVoiceOnce() {
+  if (voicePrimed || !voiceSupported()) return;
+  voicePrimed = true;
+  document.removeEventListener('pointerdown', primeVoiceOnce);
+  document.removeEventListener('keydown', primeVoiceOnce);
+  if (!voiceOn) return;
+  try {
+    const u = new SpeechSynthesisUtterance(' ');
+    u.volume = 0;
+    u.lang = 'zh-CN';
+    speechSynthesis.speak(u);
+  } catch (_) {}
 }
 
 function flushVoicePending() {
@@ -1076,6 +1095,9 @@ document.addEventListener('DOMContentLoaded', () => {
   if (voiceSupported()) {
     $('#btn-voice').addEventListener('click', () => setVoiceOn(!voiceOn));
     $('#projector-voice').addEventListener('click', () => setVoiceOn(!voiceOn));
+    // 默认开启时，第一次交互先解锁浏览器发声权限
+    document.addEventListener('pointerdown', primeVoiceOnce);
+    document.addEventListener('keydown', primeVoiceOnce);
     // 部分浏览器首次取语音列表为空，等 voiceschanged 后再预热一次
     if (!speechSynthesis.getVoices().length) speechSynthesis.onvoiceschanged = () => { pickVoice(); };
   } else {
