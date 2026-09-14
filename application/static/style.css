@@ -51,7 +51,7 @@ button.ghost {
 button.ghost:hover { background: #e2e7f0; }
 button.voice-on { background: #e3edff; color: var(--brand-dark); }
 button.voice-on:hover { background: #d3e2ff; }
-.who { font-size: 13px; color: var(--muted); align-self: center; white-space: nowrap; }
+.who-btn { font-size: 13px; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .modal-box.wide { max-width: 560px; width: 100%; }
 .modal-head { display: flex; align-items: center; justify-content: space-between; }
 .modal-sub { margin: 16px 0 8px; font-size: 14px; color: var(--muted); font-weight: 600; }
