@@ -51,6 +51,21 @@ button.ghost {
 button.ghost:hover { background: #e2e7f0; }
 button.voice-on { background: #e3edff; color: var(--brand-dark); }
 button.voice-on:hover { background: #d3e2ff; }
+.who { font-size: 13px; color: var(--muted); align-self: center; white-space: nowrap; }
+.modal-box.wide { max-width: 560px; width: 100%; }
+.modal-head { display: flex; align-items: center; justify-content: space-between; }
+.modal-sub { margin: 16px 0 8px; font-size: 14px; color: var(--muted); font-weight: 600; }
+.pw-row { display: flex; gap: 8px; }
+.pw-row input { flex: 1; min-width: 0; }
+.pw-row button { flex: none; }
+.user-list { display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow-y: auto; }
+.user-row { display: flex; align-items: center; gap: 8px; background: #f8fafc; border-radius: 8px; padding: 8px 10px; }
+.user-row .u-name { font-weight: 600; }
+.user-row .u-sub { flex: 1; min-width: 0; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.user-row .u-actions { display: flex; gap: 2px; flex: none; }
+.user-new { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.user-new button { grid-column: span 2; }
+.hint { min-height: 1.2em; margin: 10px 0 0; color: var(--muted); font-size: 13px; }
 button.danger-ghost { color: var(--down); background: #fdeef0; }
 button.danger-ghost:hover { background: #fbd9dd; }
 .icon-btn { background: transparent; color: var(--muted); font-size: 14px; width: 26px; height: 26px; border-radius: 6px; }

@@ -1,19 +1,23 @@
 import os
 import json
 import queue
+import re
 import sqlite3
 import threading
+import time
 import hmac
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import wraps
 
-from flask import Flask, request, jsonify, session, g, Response, send_from_directory
+from flask import Flask, request, jsonify, session, g, Response, send_from_directory, has_request_context
+from werkzeug.security import check_password_hash, generate_password_hash
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_DIR = os.path.join(BASE_DIR, "data")
-DB_PATH = os.path.join(DB_DIR, "jiafen.db")
+# 本地测试可以指向另一个库文件，线上不设这个变量就还是原来的位置
+DB_PATH = os.environ.get("JIAFEN_DB_PATH") or os.path.join(DB_DIR, "jiafen.db")
 
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "jiafen123")
 
@@ -21,6 +25,15 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "jiafen123")
 app = Flask(__name__, static_folder="static", static_url_path="")
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY") or os.urandom(32).hex()
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=30)
+
+
+def hash_password(pw):
+    try:
+        return generate_password_hash(pw, method="scrypt")
+    except Exception:
+        return generate_password_hash(pw, method="pbkdf2:sha256")
 
 
 # ---------------------------------------------------------------------------
@@ -87,6 +100,17 @@ def init_db():
             key TEXT PRIMARY KEY,
             value TEXT
         );
+
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL UNIQUE,
+            display_name TEXT NOT NULL DEFAULT '',
+            password_hash TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'teacher',
+            disabled INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            last_login_at TEXT
+        );
         """
     )
     # 迁移：老库补 batch_id 列（全班加减分按批次记录，便于整体撤销）
@@ -111,6 +135,23 @@ def init_db():
         conn.execute("UPDATE classes SET created_at = datetime(created_at, '+8 hours')")
         conn.execute("UPDATE groups SET created_at = datetime(created_at, '+8 hours')")
         conn.execute("INSERT INTO meta(key, value) VALUES('tz_fix_v1', '1')")
+    # 迁移：班级归属（多老师各管各的）。老库没有 owner_id 时补上，全部划给第一个管理员
+    ccols = [r[1] for r in conn.execute("PRAGMA table_info(classes)").fetchall()]
+    if "owner_id" not in ccols:
+        conn.execute("ALTER TABLE classes ADD COLUMN owner_id INTEGER")
+    row = conn.execute("SELECT id FROM users WHERE role='admin' ORDER BY id LIMIT 1").fetchone()
+    if row is None:
+        # 首次启用账号系统：把 .env 里的 ADMIN_PASSWORD 变成第一个管理员账号
+        cur = conn.execute(
+            "INSERT INTO users(username, display_name, password_hash, role) VALUES(?,?,?,?)",
+            ("admin", "管理员", hash_password(ADMIN_PASSWORD), "admin"),
+        )
+        admin_id = cur.lastrowid
+    else:
+        admin_id = row[0]
+    conn.execute("UPDATE classes SET owner_id=? WHERE owner_id IS NULL", (admin_id,))
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_classes_owner ON classes(owner_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_tx_class_id ON transactions(class_id)")
     conn.commit()
     conn.close()
 
@@ -166,6 +207,11 @@ def broadcast(payload=None):
         _seq += 1
         seq = _seq
     data = {"time": datetime.now().isoformat(), "seq": seq}
+    # 多账号：带上发起人，SSE 只把事件推给同一个账号的设备
+    if has_request_context():
+        uid = session.get("uid")
+        if uid is not None:
+            data["uid"] = uid
     if payload:
         data.update(payload)
     BROKER.publish("update", data)
@@ -176,14 +222,24 @@ def stream():
     if not is_authenticated():
         return Response("unauthorized", status=401)
     q = BROKER.subscribe()
+    uid = session.get("uid")
 
     def gen():
         try:
-            yield "event: connected\ndata: %s\n\n" % json.dumps({"seq": current_seq()})
+            yield "event: connected\ndata: %s\n\n" % json.dumps(
+                {"seq": current_seq(), "uid": uid}
+            )
             while True:
                 try:
                     # 15 秒一次保活，足以穿过 nginx/Cloudflare，又比原来每秒一次省很多
                     msg = q.get(timeout=15.0)
+                    if uid is not None:
+                        try:
+                            payload = json.loads(msg.split("data: ", 1)[1].strip())
+                        except Exception:
+                            payload = {}
+                        if payload.get("uid") not in (None, uid):
+                            continue
                     yield msg
                 except queue.Empty:
                     yield "event: ping\ndata: {}\n\n"
@@ -200,10 +256,31 @@ def stream():
 
 
 # ---------------------------------------------------------------------------
-# 登录鉴权（单管理员）
+# 账号与鉴权（多老师，各自管各自的班级）
 # ---------------------------------------------------------------------------
+def current_user():
+    uid = session.get("uid")
+    if not uid:
+        return None
+    row = get_db().execute(
+        "SELECT id, username, display_name, role, disabled FROM users WHERE id=?", (uid,)
+    ).fetchone()
+    if row is None or row["disabled"]:
+        return None
+    return row
+
+
+def user_json(u):
+    return {
+        "id": u["id"],
+        "username": u["username"],
+        "display_name": u["display_name"],
+        "role": u["role"],
+    }
+
+
 def is_authenticated():
-    return session.get("authed") is True
+    return current_user() is not None
 
 
 def login_required(f):
@@ -216,24 +293,213 @@ def login_required(f):
     return wrapper
 
 
+def admin_required(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        u = current_user()
+        if u is None:
+            return jsonify({"error": "未登录"}), 401
+        if u["role"] != "admin":
+            return jsonify({"error": "需要管理员权限"}), 403
+        return f(*args, **kwargs)
+
+    return wrapper
+
+
+def own_class(cid):
+    """当前账号名下的班级；不属于自己返回 None（所有按班级的接口都要过这一关）"""
+    u = current_user()
+    if u is None:
+        return None
+    return get_db().execute(
+        "SELECT * FROM classes WHERE id=? AND owner_id=?", (cid, u["id"])
+    ).fetchone()
+
+
+def own_class_of_group(gid):
+    """小组所属班级是不是自己的；不是返回 None"""
+    row = get_db().execute("SELECT class_id FROM groups WHERE id=?", (gid,)).fetchone()
+    if row is None:
+        return None
+    return own_class(row["class_id"])
+
+
+# 登录失败限速：同一 IP + 用户名 15 分钟内失败 5 次，锁 5 分钟
+_LOGIN_FAILS = {}
+_LOGIN_LOCK = threading.Lock()
+LOGIN_MAX_FAILS = 5
+LOGIN_FAIL_WINDOW = 900
+LOGIN_LOCK_SECONDS = 300
+
+
+def _login_key(username):
+    ip = (request.headers.get("X-Forwarded-For") or request.remote_addr or "").split(",")[0].strip()
+    return "%s|%s" % (ip, (username or "").lower())
+
+
+def _login_blocked(key):
+    """返回还需等待的秒数，0 表示可以尝试"""
+    now = time.time()
+    with _LOGIN_LOCK:
+        fails = [t for t in _LOGIN_FAILS.get(key, []) if now - t < LOGIN_FAIL_WINDOW]
+        _LOGIN_FAILS[key] = fails
+        if len(fails) < LOGIN_MAX_FAILS:
+            return 0
+        wait = int(LOGIN_LOCK_SECONDS - (now - fails[-1]))
+        if wait <= 0:
+            _LOGIN_FAILS[key] = []
+            return 0
+        return max(wait, 1)
+
+
+def _login_fail(key):
+    with _LOGIN_LOCK:
+        fails = [t for t in _LOGIN_FAILS.get(key, []) if time.time() - t < LOGIN_FAIL_WINDOW]
+        fails.append(time.time())
+        _LOGIN_FAILS[key] = fails
+
+
+def _login_ok(key):
+    with _LOGIN_LOCK:
+        _LOGIN_FAILS.pop(key, None)
+
+
 @app.route("/api/me")
 def me():
-    return jsonify({"authed": is_authenticated()})
+    u = current_user()
+    return jsonify({"authed": u is not None, "user": user_json(u) if u else None})
 
 
 @app.route("/api/login", methods=["POST"])
 def login():
     data = request.get_json(silent=True) or {}
-    pw = data.get("password", "")
-    if hmac.compare_digest(pw, ADMIN_PASSWORD):
-        session["authed"] = True
-        return jsonify({"ok": True})
-    return jsonify({"ok": False, "error": "密码错误"}), 401
+    username = (data.get("username") or "").strip()
+    pw = data.get("password") or ""
+    if not username or not pw:
+        return jsonify({"ok": False, "error": "请输入用户名和密码"}), 400
+    key = _login_key(username)
+    wait = _login_blocked(key)
+    if wait:
+        return jsonify({"ok": False, "error": "登录失败次数过多，请 %d 秒后再试" % wait}), 429
+    db = get_db()
+    row = db.execute("SELECT * FROM users WHERE username=? COLLATE NOCASE", (username,)).fetchone()
+    if row is None or row["disabled"] or not check_password_hash(row["password_hash"], pw):
+        _login_fail(key)
+        return jsonify({"ok": False, "error": "用户名或密码错误"}), 401
+    _login_ok(key)
+    session.permanent = True
+    session["uid"] = row["id"]
+    db.execute("UPDATE users SET last_login_at=datetime('now','localtime') WHERE id=?", (row["id"],))
+    db.commit()
+    return jsonify({"ok": True, "user": user_json(row)})
 
 
 @app.route("/api/logout", methods=["POST"])
 def logout():
     session.clear()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/me/password", methods=["POST"])
+@login_required
+def change_my_password():
+    data = request.get_json(silent=True) or {}
+    old = data.get("old_password") or ""
+    new = (data.get("new_password") or "").strip()
+    u = current_user()
+    db = get_db()
+    row = db.execute("SELECT password_hash FROM users WHERE id=?", (u["id"],)).fetchone()
+    if not check_password_hash(row["password_hash"], old):
+        return jsonify({"error": "原密码错误"}), 403
+    if len(new) < 4:
+        return jsonify({"error": "新密码至少 4 位"}), 400
+    db.execute("UPDATE users SET password_hash=? WHERE id=?", (hash_password(new), u["id"]))
+    db.commit()
+    return jsonify({"ok": True})
+
+
+# ---------------------------------------------------------------------------
+# 账号管理（仅管理员）
+# ---------------------------------------------------------------------------
+@app.route("/api/users")
+@admin_required
+def list_users():
+    rows = get_db().execute(
+        "SELECT u.id, u.username, u.display_name, u.role, u.disabled, u.created_at, u.last_login_at, "
+        "(SELECT COUNT(*) FROM classes c WHERE c.owner_id = u.id) AS class_count "
+        "FROM users u ORDER BY u.id"
+    ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/users", methods=["POST"])
+@admin_required
+def create_user():
+    data = request.get_json(silent=True) or {}
+    username = (data.get("username") or "").strip()
+    pw = data.get("password") or ""
+    role = "admin" if data.get("role") == "admin" else "teacher"
+    display = (data.get("display_name") or "").strip() or username
+    if len(username) < 2:
+        return jsonify({"error": "用户名至少 2 个字符"}), 400
+    if not re.match(r"^[\w\u4e00-\u9fa5.-]+$", username):
+        return jsonify({"error": "用户名只能用中英文、数字、点、下划线或横杠"}), 400
+    if len(pw) < 4:
+        return jsonify({"error": "密码至少 4 位"}), 400
+    db = get_db()
+    if db.execute("SELECT 1 FROM users WHERE username=? COLLATE NOCASE", (username,)).fetchone():
+        return jsonify({"error": "用户名已存在"}), 400
+    cur = db.execute(
+        "INSERT INTO users(username, display_name, password_hash, role) VALUES(?,?,?,?)",
+        (username, display, hash_password(pw), role),
+    )
+    db.commit()
+    return jsonify({"ok": True, "id": cur.lastrowid})
+
+
+@app.route("/api/users/<int:uid>", methods=["PATCH"])
+@admin_required
+def update_user(uid):
+    data = request.get_json(silent=True) or {}
+    me_u = current_user()
+    db = get_db()
+    target = db.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+    if target is None:
+        return jsonify({"error": "账号不存在"}), 404
+    if "display_name" in data:
+        name = (data.get("display_name") or "").strip() or target["username"]
+        db.execute("UPDATE users SET display_name=? WHERE id=?", (name, uid))
+    if "role" in data:
+        role = "admin" if data.get("role") == "admin" else "teacher"
+        if uid == me_u["id"] and role != "admin":
+            return jsonify({"error": "不能取消自己的管理员权限"}), 400
+        db.execute("UPDATE users SET role=? WHERE id=?", (role, uid))
+    if "disabled" in data:
+        dis = 1 if data.get("disabled") else 0
+        if uid == me_u["id"] and dis:
+            return jsonify({"error": "不能停用自己"}), 400
+        db.execute("UPDATE users SET disabled=? WHERE id=?", (dis, uid))
+    if data.get("password"):
+        pw = str(data["password"])
+        if len(pw) < 4:
+            return jsonify({"error": "密码至少 4 位"}), 400
+        db.execute("UPDATE users SET password_hash=? WHERE id=?", (hash_password(pw), uid))
+    db.commit()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/users/<int:uid>", methods=["DELETE"])
+@admin_required
+def delete_user(uid):
+    me_u = current_user()
+    if uid == me_u["id"]:
+        return jsonify({"error": "不能删除自己"}), 400
+    db = get_db()
+    n = db.execute("SELECT COUNT(*) AS n FROM classes WHERE owner_id=?", (uid,)).fetchone()["n"]
+    if n:
+        return jsonify({"error": "该账号名下还有 %d 个班级，先删数据或改成停用" % n}), 400
+    db.execute("DELETE FROM users WHERE id=?", (uid,))
+    db.commit()
     return jsonify({"ok": True})
 
 
@@ -244,7 +510,10 @@ def logout():
 @login_required
 def list_classes():
     db = get_db()
-    classes = db.execute("SELECT * FROM classes ORDER BY id").fetchall()
+    u = current_user()
+    classes = db.execute(
+        "SELECT * FROM classes WHERE owner_id=? ORDER BY id", (u["id"],)
+    ).fetchall()
     result = []
     for c in classes:
         groups = db.execute(
@@ -262,7 +531,8 @@ def create_class():
     if not name:
         return jsonify({"error": "班级名称不能为空"}), 400
     db = get_db()
-    cur = db.execute("INSERT INTO classes(name) VALUES(?)", (name,))
+    u = current_user()
+    cur = db.execute("INSERT INTO classes(name, owner_id) VALUES(?,?)", (name, u["id"]))
     db.commit()
     broadcast()
     return jsonify({"id": cur.lastrowid, "name": name})
@@ -275,6 +545,8 @@ def update_class(cid):
     name = (data.get("name") or "").strip()
     if not name:
         return jsonify({"error": "班级名称不能为空"}), 400
+    if not own_class(cid):
+        return jsonify({"error": "班级不存在"}), 404
     db = get_db()
     db.execute("UPDATE classes SET name=? WHERE id=?", (name, cid))
     db.commit()
@@ -285,6 +557,8 @@ def update_class(cid):
 @app.route("/api/classes/<int:cid>", methods=["DELETE"])
 @login_required
 def delete_class(cid):
+    if not own_class(cid):
+        return jsonify({"error": "班级不存在"}), 404
     db = get_db()
     db.execute("DELETE FROM classes WHERE id=?", (cid,))
     db.commit()
@@ -297,9 +571,13 @@ def delete_class(cid):
 def reset_class(cid):
     data = request.get_json(silent=True) or {}
     pw = data.get("password", "")
-    if not hmac.compare_digest(pw, ADMIN_PASSWORD):
-        return jsonify({"error": "密码错误，无法清零"}), 403
+    u = current_user()
+    if not own_class(cid):
+        return jsonify({"error": "班级不存在"}), 404
     db = get_db()
+    row = db.execute("SELECT password_hash FROM users WHERE id=?", (u["id"],)).fetchone()
+    if not check_password_hash(row["password_hash"], pw):
+        return jsonify({"error": "密码错误，无法清零"}), 403
     db.execute("UPDATE groups SET score=0 WHERE class_id=?", (cid,))
     db.execute("DELETE FROM transactions WHERE class_id=?", (cid,))
     db.commit()
@@ -318,6 +596,8 @@ def create_group(cid):
     color = (data.get("color") or "#5B9BD5").strip()
     if not name:
         return jsonify({"error": "小组名称不能为空"}), 400
+    if not own_class(cid):
+        return jsonify({"error": "班级不存在"}), 404
     db = get_db()
     cur = db.execute(
         "INSERT INTO groups(class_id, name, color, sort_order) "
@@ -334,6 +614,8 @@ def create_group(cid):
 def reorder_groups(cid):
     data = request.get_json(silent=True) or {}
     order = data.get("order", [])
+    if not own_class(cid):
+        return jsonify({"error": "班级不存在"}), 404
     db = get_db()
     rows = db.execute("SELECT id FROM groups WHERE class_id=?", (cid,)).fetchall()
     valid = {r["id"] for r in rows}
@@ -350,6 +632,8 @@ def reorder_groups(cid):
 @login_required
 def update_group(gid):
     data = request.get_json(silent=True) or {}
+    if not own_class_of_group(gid):
+        return jsonify({"error": "小组不存在"}), 404
     db = get_db()
     if "name" in data:
         name = (data.get("name") or "").strip()
@@ -369,6 +653,8 @@ def update_group(gid):
 @app.route("/api/groups/<int:gid>", methods=["DELETE"])
 @login_required
 def delete_group(gid):
+    if not own_class_of_group(gid):
+        return jsonify({"error": "小组不存在"}), 404
     db = get_db()
     db.execute("DELETE FROM groups WHERE id=?", (gid,))
     db.commit()
@@ -391,13 +677,13 @@ def add_score():
     reason = (data.get("reason") or "").strip()
     if not gid or delta == 0:
         return jsonify({"error": "参数错误"}), 400
-    db = get_db()
-    row = db.execute("SELECT class_id FROM groups WHERE id=?", (gid,)).fetchone()
-    if not row:
+    owned = own_class_of_group(gid)
+    if not owned:
         return jsonify({"error": "小组不存在"}), 404
+    db = get_db()
     db.execute(
         "INSERT INTO transactions(group_id, class_id, delta, reason) VALUES(?,?,?,?)",
-        (gid, row["class_id"], delta, reason),
+        (gid, owned["id"], delta, reason),
     )
     db.execute("UPDATE groups SET score = score + ? WHERE id=?", (delta, gid))
     db.commit()
@@ -407,7 +693,7 @@ def add_score():
             "kind": "score",
             "client": (data.get("client") or "")[:32],
             "group_id": gid,
-            "class_id": row["class_id"],
+            "class_id": owned["id"],
             "delta": delta,
             "score": new_score,
             "reason": reason,
@@ -422,6 +708,8 @@ def add_score():
 def add_class_score(cid):
     """全班加减分：给该班级每个小组都加上同一个分值，同一批次记录，可整体撤销。"""
     data = request.get_json(silent=True) or {}
+    if not own_class(cid):
+        return jsonify({"error": "班级不存在"}), 404
     try:
         delta = int(data.get("delta", 0))
     except (TypeError, ValueError):
@@ -473,8 +761,13 @@ def undo():
     data = request.get_json(silent=True) or {}
     client = (data.get("client") or "")[:32]
     db = get_db()
+    u = current_user()
+    # 只撤销自己名下的最后一次操作，别去动别人的分
     t = db.execute(
-        "SELECT id, group_id, delta, batch_id FROM transactions ORDER BY id DESC LIMIT 1"
+        "SELECT id, group_id, delta, batch_id FROM transactions "
+        "WHERE class_id IN (SELECT id FROM classes WHERE owner_id=?) "
+        "ORDER BY id DESC LIMIT 1",
+        (u["id"],),
     ).fetchone()
     if not t:
         return jsonify({"ok": True, "undone": False})
@@ -521,6 +814,7 @@ def _group_scores(db, gids):
 def history():
     cid = request.args.get("class_id")
     db = get_db()
+    u = current_user()
     query = (
         "SELECT t.id, t.delta, t.reason, t.created_at, t.group_id, t.batch_id, "
         "g.name AS group_name, c.name AS class_name "
@@ -528,9 +822,10 @@ def history():
         "JOIN groups g ON g.id = t.group_id "
         "JOIN classes c ON c.id = t.class_id"
     )
-    params = []
+    query += " WHERE c.owner_id = ?"
+    params = [u["id"]]
     if cid:
-        query += " WHERE t.class_id = ?"
+        query += " AND t.class_id = ?"
         params.append(cid)
     query += " ORDER BY t.id DESC LIMIT 100"
     rows = db.execute(query, params).fetchall()
@@ -544,7 +839,10 @@ def history():
 @login_required
 def export_data():
     db = get_db()
-    classes = db.execute("SELECT * FROM classes ORDER BY id").fetchall()
+    u = current_user()
+    classes = db.execute(
+        "SELECT * FROM classes WHERE owner_id=? ORDER BY id", (u["id"],)
+    ).fetchall()
     data = []
     for c in classes:
         groups = db.execute("SELECT * FROM groups WHERE class_id=? ORDER BY id", (c["id"],)).fetchall()
@@ -566,11 +864,21 @@ def import_data():
     data = request.get_json(silent=True) or {}
     classes = data.get("classes", [])
     db = get_db()
-    db.execute("DELETE FROM transactions")
-    db.execute("DELETE FROM groups")
-    db.execute("DELETE FROM classes")
+    u = current_user()
+    # 导入只覆盖自己的班级，其他老师的数据一概不动
+    db.execute(
+        "DELETE FROM transactions WHERE class_id IN (SELECT id FROM classes WHERE owner_id=?)",
+        (u["id"],),
+    )
+    db.execute(
+        "DELETE FROM groups WHERE class_id IN (SELECT id FROM classes WHERE owner_id=?)",
+        (u["id"],),
+    )
+    db.execute("DELETE FROM classes WHERE owner_id=?", (u["id"],))
     for c in classes:
-        cur = db.execute("INSERT INTO classes(name) VALUES(?)", (c.get("name", ""),))
+        cur = db.execute(
+            "INSERT INTO classes(name, owner_id) VALUES(?,?)", (c.get("name", ""), u["id"])
+        )
         cid = cur.lastrowid
         for g in c.get("groups", []):
             db.execute(
