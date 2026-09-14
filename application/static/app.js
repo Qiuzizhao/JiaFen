@@ -646,11 +646,10 @@ async function saveProfile() {
 // 注册新账号（需要注册口令）
 async function doRegister() {
   const username = $('#reg-name').value.trim();
-  const display_name = $('#reg-display').value.trim();
   const password = $('#reg-pw').value;
   if (!username || !password) { $('#login-err').textContent = '请填写用户名和密码'; return; }
   try {
-    const res = await api('/api/register', { method: 'POST', body: { username, display_name, password } });
+    const res = await api('/api/register', { method: 'POST', body: { username, password } });
     state.user = res.user || null;
     $('#reg-pw').value = '';
     showLoginView(true);   // 收起注册表单
