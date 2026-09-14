@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100" role="img" aria-label="课堂小组积分">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5b9bf8"/>
+      <stop offset="1" stop-color="#2563eb"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="100" height="100" rx="24" fill="url(#bg)"/>
+  <polygon fill="#ffffff" points="50,22 56.74,42.73 78.53,42.73 60.9,55.54 67.63,76.27 50,63.46 32.37,76.27 39.1,55.54 21.47,42.73 43.26,42.73"/>
+</svg>
