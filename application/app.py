@@ -20,6 +20,10 @@ DB_DIR = os.path.join(BASE_DIR, "data")
 DB_PATH = os.environ.get("JIAFEN_DB_PATH") or os.path.join(DB_DIR, "jiafen.db")
 
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "jiafen123")
+# 没有管理员角色：新账号自己在登录页注册，注册时要填这个口令（默认就是 .env 里的那个密码）
+REGISTER_CODE = os.environ.get("REGISTER_CODE") or ADMIN_PASSWORD
+# 启用账号系统时自动创建的第一个账号（现有班级都归它），用户名可以用环境变量改
+FIRST_USER = os.environ.get("FIRST_USER") or "admin"
 
 
 app = Flask(__name__, static_folder="static", static_url_path="")
@@ -106,8 +110,6 @@ def init_db():
             username TEXT NOT NULL UNIQUE,
             display_name TEXT NOT NULL DEFAULT '',
             password_hash TEXT NOT NULL,
-            role TEXT NOT NULL DEFAULT 'teacher',
-            disabled INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
             last_login_at TEXT
         );
@@ -135,21 +137,21 @@ def init_db():
         conn.execute("UPDATE classes SET created_at = datetime(created_at, '+8 hours')")
         conn.execute("UPDATE groups SET created_at = datetime(created_at, '+8 hours')")
         conn.execute("INSERT INTO meta(key, value) VALUES('tz_fix_v1', '1')")
-    # 迁移：班级归属（多老师各管各的）。老库没有 owner_id 时补上，全部划给第一个管理员
+    # 迁移：班级归属（多老师各管各的）。老库没有 owner_id 时补上，全部划给第一个账号
     ccols = [r[1] for r in conn.execute("PRAGMA table_info(classes)").fetchall()]
     if "owner_id" not in ccols:
         conn.execute("ALTER TABLE classes ADD COLUMN owner_id INTEGER")
-    row = conn.execute("SELECT id FROM users WHERE role='admin' ORDER BY id LIMIT 1").fetchone()
+    row = conn.execute("SELECT id FROM users ORDER BY id LIMIT 1").fetchone()
     if row is None:
-        # 首次启用账号系统：把 .env 里的 ADMIN_PASSWORD 变成第一个管理员账号
+        # 首次启用账号系统：用 .env 里的密码建第一个账号
         cur = conn.execute(
-            "INSERT INTO users(username, display_name, password_hash, role) VALUES(?,?,?,?)",
-            ("admin", "管理员", hash_password(ADMIN_PASSWORD), "admin"),
+            "INSERT INTO users(username, display_name, password_hash) VALUES(?,?,?)",
+            (FIRST_USER, FIRST_USER, hash_password(ADMIN_PASSWORD)),
         )
-        admin_id = cur.lastrowid
+        owner_id = cur.lastrowid
     else:
-        admin_id = row[0]
-    conn.execute("UPDATE classes SET owner_id=? WHERE owner_id IS NULL", (admin_id,))
+        owner_id = row[0]
+    conn.execute("UPDATE classes SET owner_id=? WHERE owner_id IS NULL", (owner_id,))
     conn.execute("CREATE INDEX IF NOT EXISTS idx_classes_owner ON classes(owner_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_tx_class_id ON transactions(class_id)")
     conn.commit()
@@ -263,9 +265,9 @@ def current_user():
     if not uid:
         return None
     row = get_db().execute(
-        "SELECT id, username, display_name, role, disabled FROM users WHERE id=?", (uid,)
+        "SELECT id, username, display_name FROM users WHERE id=?", (uid,)
     ).fetchone()
-    if row is None or row["disabled"]:
+    if row is None:
         return None
     return row
 
@@ -275,7 +277,6 @@ def user_json(u):
         "id": u["id"],
         "username": u["username"],
         "display_name": u["display_name"],
-        "role": u["role"],
     }
 
 
@@ -288,19 +289,6 @@ def login_required(f):
     def wrapper(*args, **kwargs):
         if not is_authenticated():
             return jsonify({"error": "未登录"}), 401
-        return f(*args, **kwargs)
-
-    return wrapper
-
-
-def admin_required(f):
-    @wraps(f)
-    def wrapper(*args, **kwargs):
-        u = current_user()
-        if u is None:
-            return jsonify({"error": "未登录"}), 401
-        if u["role"] != "admin":
-            return jsonify({"error": "需要管理员权限"}), 403
         return f(*args, **kwargs)
 
     return wrapper
@@ -383,7 +371,7 @@ def login():
         return jsonify({"ok": False, "error": "登录失败次数过多，请 %d 秒后再试" % wait}), 429
     db = get_db()
     row = db.execute("SELECT * FROM users WHERE username=? COLLATE NOCASE", (username,)).fetchone()
-    if row is None or row["disabled"] or not check_password_hash(row["password_hash"], pw):
+    if row is None or not check_password_hash(row["password_hash"], pw):
         _login_fail(key)
         return jsonify({"ok": False, "error": "用户名或密码错误"}), 401
     _login_ok(key)
@@ -419,27 +407,22 @@ def change_my_password():
 
 
 # ---------------------------------------------------------------------------
-# 账号管理（仅管理员）
+# 注册（没有管理员角色，老师自己注册，注册口令对了才能建号）
 # ---------------------------------------------------------------------------
-@app.route("/api/users")
-@admin_required
-def list_users():
-    rows = get_db().execute(
-        "SELECT u.id, u.username, u.display_name, u.role, u.disabled, u.created_at, u.last_login_at, "
-        "(SELECT COUNT(*) FROM classes c WHERE c.owner_id = u.id) AS class_count "
-        "FROM users u ORDER BY u.id"
-    ).fetchall()
-    return jsonify([dict(r) for r in rows])
-
-
-@app.route("/api/users", methods=["POST"])
-@admin_required
-def create_user():
+@app.route("/api/register", methods=["POST"])
+def register():
     data = request.get_json(silent=True) or {}
     username = (data.get("username") or "").strip()
     pw = data.get("password") or ""
-    role = "admin" if data.get("role") == "admin" else "teacher"
+    code = data.get("code") or ""
     display = (data.get("display_name") or "").strip() or username
+    key = _login_key("register")
+    wait = _login_blocked(key)
+    if wait:
+        return jsonify({"error": "尝试次数过多，请 %d 秒后再试" % wait}), 429
+    if not hmac.compare_digest(code, REGISTER_CODE):
+        _login_fail(key)
+        return jsonify({"error": "注册口令不正确"}), 403
     if len(username) < 2:
         return jsonify({"error": "用户名至少 2 个字符"}), 400
     if not re.match(r"^[\w\u4e00-\u9fa5.-]+$", username):
@@ -450,57 +433,29 @@ def create_user():
     if db.execute("SELECT 1 FROM users WHERE username=? COLLATE NOCASE", (username,)).fetchone():
         return jsonify({"error": "用户名已存在"}), 400
     cur = db.execute(
-        "INSERT INTO users(username, display_name, password_hash, role) VALUES(?,?,?,?)",
-        (username, display, hash_password(pw), role),
+        "INSERT INTO users(username, display_name, password_hash) VALUES(?,?,?)",
+        (username, display, hash_password(pw)),
     )
     db.commit()
-    return jsonify({"ok": True, "id": cur.lastrowid})
+    _login_ok(key)
+    session.permanent = True
+    session["uid"] = cur.lastrowid
+    return jsonify({"ok": True, "user": {"id": cur.lastrowid, "username": username, "display_name": display}})
 
 
-@app.route("/api/users/<int:uid>", methods=["PATCH"])
-@admin_required
-def update_user(uid):
+@app.route("/api/me/profile", methods=["POST"])
+@login_required
+def update_my_profile():
     data = request.get_json(silent=True) or {}
-    me_u = current_user()
+    name = (data.get("display_name") or "").strip()
+    if len(name) > 20:
+        return jsonify({"error": "显示名最多 20 个字"}), 400
+    u = current_user()
     db = get_db()
-    target = db.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
-    if target is None:
-        return jsonify({"error": "账号不存在"}), 404
-    if "display_name" in data:
-        name = (data.get("display_name") or "").strip() or target["username"]
-        db.execute("UPDATE users SET display_name=? WHERE id=?", (name, uid))
-    if "role" in data:
-        role = "admin" if data.get("role") == "admin" else "teacher"
-        if uid == me_u["id"] and role != "admin":
-            return jsonify({"error": "不能取消自己的管理员权限"}), 400
-        db.execute("UPDATE users SET role=? WHERE id=?", (role, uid))
-    if "disabled" in data:
-        dis = 1 if data.get("disabled") else 0
-        if uid == me_u["id"] and dis:
-            return jsonify({"error": "不能停用自己"}), 400
-        db.execute("UPDATE users SET disabled=? WHERE id=?", (dis, uid))
-    if data.get("password"):
-        pw = str(data["password"])
-        if len(pw) < 4:
-            return jsonify({"error": "密码至少 4 位"}), 400
-        db.execute("UPDATE users SET password_hash=? WHERE id=?", (hash_password(pw), uid))
+    name = name or u["username"]
+    db.execute("UPDATE users SET display_name=? WHERE id=?", (name, u["id"]))
     db.commit()
-    return jsonify({"ok": True})
-
-
-@app.route("/api/users/<int:uid>", methods=["DELETE"])
-@admin_required
-def delete_user(uid):
-    me_u = current_user()
-    if uid == me_u["id"]:
-        return jsonify({"error": "不能删除自己"}), 400
-    db = get_db()
-    n = db.execute("SELECT COUNT(*) AS n FROM classes WHERE owner_id=?", (uid,)).fetchone()["n"]
-    if n:
-        return jsonify({"error": "该账号名下还有 %d 个班级，先删数据或改成停用" % n}), 400
-    db.execute("DELETE FROM users WHERE id=?", (uid,))
-    db.commit()
-    return jsonify({"ok": True})
+    return jsonify({"ok": True, "display_name": name})
 
 
 # ---------------------------------------------------------------------------

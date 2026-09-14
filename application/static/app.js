@@ -69,7 +69,9 @@ function showLogin() {
   $('#app').classList.add('hidden');
   $('#login').classList.remove('hidden');
   $('#login-pw').value = '';
-  $('#login-name').value = '';
+  $('#reg-pw').value = '';
+  $('#reg-code').value = '';
+  showLoginView(true);
   $('#login-err').textContent = '';
 }
 function showApp() {
@@ -86,7 +88,7 @@ function hardenPasswordFields() {
   const canMask = !!(window.CSS && CSS.supports && CSS.supports('-webkit-text-security', 'disc'));
   // 登录框现在有真正的用户名字段，交给浏览器正常保存即可；
   // 这里只处理「没有用户名、要求重新输密码」的框，避免浏览器把它们当登录表单存起来
-  ['#reset-pw', '#pw-old', '#pw-new', '#new-password'].forEach(sel => {
+  ['#reset-pw', '#pw-old', '#pw-new', '#reg-pw', '#reg-code'].forEach(sel => {
     const el = $(sel);
     if (!el || el.dataset.hardened) return;
     el.dataset.hardened = '1';
@@ -604,8 +606,6 @@ function renderAccount() {
   const u = state.user;
   const who = $('#who');
   if (who) who.textContent = u ? (u.display_name || u.username) : '';
-  const adminBox = $('#admin-users');
-  if (adminBox) adminBox.classList.toggle('hidden', !u || u.role !== 'admin');
 }
 
 function openAccount() {
@@ -613,34 +613,14 @@ function openAccount() {
   $('#account-err').textContent = '';
   $('#pw-old').value = '';
   $('#pw-new').value = '';
+  $('#profile-name').value = u ? (u.display_name || '') : '';
   $('#account-me').textContent = u
-    ? `当前账号：${u.display_name || u.username}（${u.username}${u.role === 'admin' ? ' · 管理员' : ''}）`
+    ? `当前账号：${u.display_name || u.username}（${u.username}）`
     : '';
   renderAccount();
-  if (u && u.role === 'admin') loadUsers();
   $('#account-modal').classList.remove('hidden');
 }
 function closeAccount() { $('#account-modal').classList.add('hidden'); }
-
-async function loadUsers() {
-  const el = $('#user-list');
-  try {
-    const users = await api('/api/users');
-    el.innerHTML = users.map(u => `
-      <div class="user-row">
-        <span class="u-name">${esc(u.display_name || u.username)}</span>
-        <span class="u-sub">${esc(u.username)}${u.role === 'admin' ? ' · 管理员' : ''} · ${u.class_count} 个班${u.disabled ? ' · 已停用' : ''}</span>
-        <span class="u-actions">
-          <button class="icon-btn" onclick="resetUserPassword(${u.id}, '${esc(u.username)}')" title="重置密码">🔑</button>
-          <button class="icon-btn" onclick="toggleUserRole(${u.id}, '${u.role === 'admin' ? 'teacher' : 'admin'}')" title="${u.role === 'admin' ? '取消管理员' : '设为管理员'}">${u.role === 'admin' ? '★' : '☆'}</button>
-          <button class="icon-btn" onclick="toggleUserDisabled(${u.id}, ${u.disabled ? 0 : 1})" title="${u.disabled ? '启用' : '停用'}">${u.disabled ? '▶' : '⏸'}</button>
-          <button class="icon-btn danger" onclick="deleteUser(${u.id}, '${esc(u.username)}')" title="删除">✕</button>
-        </span>
-      </div>`).join('');
-  } catch (e) {
-    el.innerHTML = `<div class="empty">${esc(e.message)}</div>`;
-  }
-}
 
 async function saveMyPassword() {
   const oldPw = $('#pw-old').value, newPw = $('#pw-new').value;
@@ -653,51 +633,38 @@ async function saveMyPassword() {
   } catch (e) { $('#account-err').textContent = e.message; }
 }
 
-async function addUser() {
-  const username = $('#new-username').value.trim();
-  const display_name = $('#new-display').value.trim();
-  const role = $('#new-role').value;
-  const password = $('#new-password').value;
-  if (!username || !password) { $('#account-err').textContent = '请填写用户名和初始密码'; return; }
+async function saveProfile() {
+  const display_name = $('#profile-name').value.trim();
   try {
-    await api('/api/users', { method: 'POST', body: { username, display_name, role, password } });
-    $('#new-username').value = '';
-    $('#new-display').value = '';
-    $('#new-password').value = '';
-    $('#account-err').textContent = '已添加账号';
-    await loadUsers();
+    const res = await api('/api/me/profile', { method: 'POST', body: { display_name } });
+    state.user = { ...state.user, display_name: res.display_name };
+    renderAccount();
+    openAccount();
+    $('#account-err').textContent = '显示名已更新';
   } catch (e) { $('#account-err').textContent = e.message; }
 }
 
-async function resetUserPassword(uid, name) {
-  const pw = prompt(`给「${name}」设置新密码（至少 4 位）`);
-  if (!pw) return;
+// 注册新账号（需要注册口令）
+async function doRegister() {
+  const username = $('#reg-name').value.trim();
+  const display_name = $('#reg-display').value.trim();
+  const password = $('#reg-pw').value;
+  const code = $('#reg-code').value;
+  if (!username || !password) { $('#login-err').textContent = '请填写用户名和密码'; return; }
   try {
-    await api('/api/users/' + uid, { method: 'PATCH', body: { password: pw } });
-    $('#account-err').textContent = `已重置「${name}」的密码`;
-  } catch (e) { $('#account-err').textContent = e.message; }
+    const res = await api('/api/register', { method: 'POST', body: { username, display_name, password, code } });
+    state.user = res.user || null;
+    $('#reg-pw').value = '';
+    $('#reg-code').value = '';
+    showLoginView(true);   // 收起注册表单
+    await bootstrap();
+  } catch (e) { $('#login-err').textContent = e.message; }
 }
 
-async function toggleUserRole(uid, role) {
-  try {
-    await api('/api/users/' + uid, { method: 'PATCH', body: { role } });
-    await loadUsers();
-  } catch (e) { $('#account-err').textContent = e.message; }
-}
-
-async function toggleUserDisabled(uid, disabled) {
-  try {
-    await api('/api/users/' + uid, { method: 'PATCH', body: { disabled: !!disabled } });
-    await loadUsers();
-  } catch (e) { $('#account-err').textContent = e.message; }
-}
-
-async function deleteUser(uid, name) {
-  if (!confirm(`删除账号「${name}」？名下有班级的账号不能删，只能停用。`)) return;
-  try {
-    await api('/api/users/' + uid, { method: 'DELETE' });
-    await loadUsers();
-  } catch (e) { $('#account-err').textContent = e.message; }
+function showLoginView(isLogin) {
+  $('#login-form').classList.toggle('hidden', !isLogin);
+  $('#register-form').classList.toggle('hidden', isLogin);
+  $('#login-err').textContent = '';
 }
 let es = null;
 let lastSeq = 0;
@@ -1101,8 +1068,11 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#account-close').addEventListener('click', closeAccount);
   $('#account-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeAccount(); });
   $('#pw-save').addEventListener('click', saveMyPassword);
-  $('#user-add').addEventListener('click', addUser);
-  $('#new-password').addEventListener('keydown', e => { if (e.key === 'Enter') addUser(); });
+  $('#profile-save').addEventListener('click', saveProfile);
+  $('#show-register').addEventListener('click', e => { e.preventDefault(); showLoginView(false); });
+  $('#show-login').addEventListener('click', e => { e.preventDefault(); showLoginView(true); });
+  $('#register-btn').addEventListener('click', doRegister);
+  $('#reg-code').addEventListener('keydown', e => { if (e.key === 'Enter') doRegister(); });
   $('#btn-undo').addEventListener('click', doUndo);
   $('#lb-class-btn').addEventListener('click', () => setLeaderboardMode('class'));
   $('#lb-school-btn').addEventListener('click', () => setLeaderboardMode('school'));

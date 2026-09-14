@@ -12,10 +12,22 @@
   <div id="login" class="hidden">
     <div class="login-box">
       <h1>课堂小组积分</h1>
-      <p class="muted">请输入用户名和密码</p>
-      <input type="text" id="login-name" placeholder="用户名" autocomplete="username" spellcheck="false" autocapitalize="off">
-      <input type="password" id="login-pw" placeholder="密码" autocomplete="current-password">
-      <button id="login-btn" class="primary">进入</button>
+      <div id="login-form">
+        <p class="muted">请输入用户名和密码</p>
+        <input type="text" id="login-name" placeholder="用户名" autocomplete="username" spellcheck="false" autocapitalize="off">
+        <input type="password" id="login-pw" placeholder="密码" autocomplete="current-password">
+        <button id="login-btn" class="primary">进入</button>
+        <p class="muted small">还没有账号？<a href="#" id="show-register">注册</a></p>
+      </div>
+      <div id="register-form" class="hidden">
+        <p class="muted">注册新账号</p>
+        <input type="text" id="reg-name" placeholder="用户名" spellcheck="false" autocapitalize="off">
+        <input type="text" id="reg-display" placeholder="显示名（可留空）">
+        <input type="password" id="reg-pw" placeholder="密码（至少 4 位）" autocomplete="new-password">
+        <input type="password" id="reg-code" placeholder="注册口令" autocomplete="off">
+        <button id="register-btn" class="primary">注册并进入</button>
+        <p class="muted small"><a href="#" id="show-login">返回登录</a></p>
+      </div>
       <p id="login-err" class="err"></p>
     </div>
   </div>
@@ -125,26 +137,16 @@
         <button id="account-close" class="icon-btn" aria-label="关闭">✕</button>
       </div>
       <p class="muted" id="account-me"></p>
+      <h4 class="modal-sub">显示名</h4>
+      <div class="pw-row">
+        <input type="text" id="profile-name" placeholder="顶栏显示的名字" maxlength="20">
+        <button id="profile-save" class="primary">保存</button>
+      </div>
       <h4 class="modal-sub">修改我的密码</h4>
       <div class="pw-row">
         <input type="password" id="pw-old" placeholder="当前密码" autocomplete="off">
         <input type="password" id="pw-new" placeholder="新密码（至少 4 位）" autocomplete="off">
         <button id="pw-save" class="primary">保存</button>
-      </div>
-      <div id="admin-users" class="hidden">
-        <h4 class="modal-sub">老师账号</h4>
-        <div id="user-list" class="user-list"></div>
-        <h4 class="modal-sub">新增账号</h4>
-        <div class="user-new">
-          <input type="text" id="new-username" placeholder="用户名" autocomplete="off">
-          <input type="text" id="new-display" placeholder="显示名（可留空）" autocomplete="off">
-          <select id="new-role">
-            <option value="teacher">老师</option>
-            <option value="admin">管理员</option>
-          </select>
-          <input type="password" id="new-password" placeholder="初始密码" autocomplete="new-password">
-          <button id="user-add" class="primary">添加</button>
-        </div>
       </div>
       <p id="account-err" class="hint"></p>
     </div>
