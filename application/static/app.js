@@ -173,8 +173,25 @@ function updateSchoolRanks() {
 // 分数变动后统一刷新：排行榜 + 投屏 + 全校排名角标
 function refreshScoreViews() {
   renderLeaderboard();
-  renderProjector();
+  updateProjectorScores();
   updateSchoolRanks();
+}
+
+// 投屏看板只原位改分数，不重建卡片。
+// 重建会让「按下还没抬起」的那次点击被浏览器丢掉（点了没反应），也会把滚动位置带跑。
+function updateProjectorScores() {
+  const cls = getCurrentClass();
+  const el = $('#projector-board');
+  if (!el) return;
+  if (!cls || !cls.groups.length) { renderProjector(); return; }
+  const cards = el.querySelectorAll('.proj-card');
+  const sameSet = cards.length === cls.groups.length
+    && Array.prototype.every.call(cards, (card, i) => Number(card.dataset.gid) === cls.groups[i].id);
+  if (!sameSet) { renderProjector(); return; }   // 换班/增减小组这类结构变化才重建
+  cls.groups.forEach(g => {
+    const scoreEl = el.querySelector('.proj-card[data-gid="' + g.id + '"] .p-score');
+    if (scoreEl && scoreEl.textContent !== String(g.score)) scoreEl.textContent = g.score;
+  });
 }
 
 function groupCard(g, ranks) {
@@ -301,15 +318,17 @@ function renderProjector() {
   if (!cls.groups.length) { el.innerHTML = '<div class="empty">暂无小组</div>'; return; }
   // Projector board lists groups in their fixed custom order (backend returns sort_order), not by score.
   const order = cls.groups;
+  const keepScroll = el.scrollTop;   // 重建时保留滚动位置，避免卡片在手指底下移位
   el.innerHTML = order.map(g => `
     <div class="proj-card" data-gid="${g.id}" style="--c:${esc(g.color)}">
       <div class="p-name">${esc(g.name)}</div>
       <div class="p-score">${g.score}</div>
       <div class="p-actions">
-        <button class="pbtn plus" onclick="addScore(${g.id},1)" title="加 1 分">+1</button>
-        <button class="pbtn minus" onclick="addScore(${g.id},-1)" title="减 1 分">-1</button>
+        <button class="pbtn plus" data-gid="${g.id}" data-delta="1" title="加 1 分">+1</button>
+        <button class="pbtn minus" data-gid="${g.id}" data-delta="-1" title="减 1 分">-1</button>
       </div>
     </div>`).join('');
+  el.scrollTop = keepScroll;
 }
 
 // 只更新一个小组的分数，不重建整个看板（重建会丢焦点、引发布局抖动）
@@ -333,6 +352,20 @@ function prependHistoryLocal(entry) {
 let refreshing = false;
 let refreshQueued = false;
 let lastRefreshAt = 0;
+
+// 还没得到服务端确认的加减分：gid -> 净增量。
+// 后台对账（refresh）拉到的数据如果比这次点击旧，就把这个增量补回去，
+// 否则表现就是「刚点的分被刷回去了，像没生效」。
+const pendingDeltas = new Map();
+function addPendingDelta(gid, delta) {
+  pendingDeltas.set(gid, (pendingDeltas.get(gid) || 0) + delta);
+}
+function dropPendingDelta(gid, delta) {
+  const left = (pendingDeltas.get(gid) || 0) - delta;
+  if (left) pendingDeltas.set(gid, left);
+  else pendingDeltas.delete(gid);
+  return pendingDeltas.get(gid) || 0;
+}
 async function refresh() {
   // 已有请求在跑时排队一次，而不是直接丢弃（连点时不再漏掉最新状态）
   if (refreshing) { refreshQueued = true; return; }
@@ -345,6 +378,12 @@ async function refresh() {
     ]);
     state.classes = classes;
     state.history = history;
+    if (pendingDeltas.size) {
+      state.classes.forEach(c => c.groups.forEach(g => {
+        const d = pendingDeltas.get(g.id);
+        if (d) g.score += d;
+      }));
+    }
     lastRefreshAt = Date.now();
     renderSidebar();
     renderMobileClassSelect();
@@ -360,6 +399,8 @@ async function refresh() {
 
 // 切回本页/重新聚焦时对账一次，避免长时间不刷新造成状态漂移
 function reconcileIfStale() {
+  // 手正在屏幕上操作时先别刷，否则重建会把「按下的那一次点击」吞掉
+  if (Date.now() - lastInteractAt < 1500) return;
   if (Date.now() - lastRefreshAt > 20000) refresh();
 }
 
@@ -369,6 +410,7 @@ async function addScore(gid, delta, reason = '') {
   const g = findGroup(gid);
   if (!g) { alert('小组不存在，请刷新页面'); return; }
   const prev = g.score;
+  addPendingDelta(gid, delta);
   setGroupScore(gid, prev + delta);
   announceScore(g.name, delta);
   try {
@@ -376,7 +418,9 @@ async function addScore(gid, delta, reason = '') {
       method: 'POST',
       body: { group_id: gid, delta, reason, client: CLIENT_ID },
     });
-    if (typeof res.score === 'number') setGroupScore(gid, res.score);
+    // 还有别的加分在路上时，按服务端的权威值 + 未落地的增量显示，避免来回跳
+    const stillPending = dropPendingDelta(gid, delta);
+    if (typeof res.score === 'number') setGroupScore(gid, res.score + stillPending);
     const cls = state.classes.find(c => c.groups.includes(g));
     prependHistoryLocal({
       id: 'local-' + Date.now(), delta, reason, created_at: localStamp(),
@@ -384,6 +428,7 @@ async function addScore(gid, delta, reason = '') {
       class_name: cls ? cls.name : '',
     });
   } catch (e) {
+    dropPendingDelta(gid, delta);
     setGroupScore(gid, prev);
     alert(e.message);
   }
@@ -402,6 +447,7 @@ async function addClassScore(delta, reason = '') {
   if (!cls) { alert('请先选择班级'); return; }
   if (!cls.groups.length) { alert('这个班级还没有小组'); return; }
   const prev = cls.groups.map(g => ({ id: g.id, score: g.score }));
+  cls.groups.forEach(g => addPendingDelta(g.id, delta));
   cls.groups.forEach(g => setGroupScore(g.id, g.score + delta, false));
   refreshScoreViews();
   announceScore('全班', delta);
@@ -410,7 +456,10 @@ async function addClassScore(delta, reason = '') {
       method: 'POST',
       body: { delta, reason, client: CLIENT_ID },
     });
-    if (Array.isArray(res.scores)) setGroupScores(res.scores);
+    cls.groups.forEach(g => dropPendingDelta(g.id, delta));
+    if (Array.isArray(res.scores)) {
+      setGroupScores(res.scores.map(s => ({ id: s.id, score: s.score + (pendingDeltas.get(s.id) || 0) })));
+    }
     const batchId = res.batch_id || ('local-' + Date.now());
     const stamp = localStamp();
     const entries = cls.groups.map(g => ({
@@ -419,6 +468,7 @@ async function addClassScore(delta, reason = '') {
     }));
     entries.reverse().forEach(prependHistoryLocal);
   } catch (e) {
+    cls.groups.forEach(g => dropPendingDelta(g.id, delta));
     prev.forEach(p => setGroupScore(p.id, p.score, false));
     refreshScoreViews();
     alert(e.message);
@@ -800,6 +850,40 @@ function openProjector() {
 }
 function closeProjector() { $('#projector').classList.add('hidden'); }
 
+// 投屏卡片上的 +1 / -1：按下时先记住「哪个按钮、在什么位置」，抬起时再按坐标重新找按钮。
+// 这样即使按下和抬起之间卡片被重建（后台对账刷新、别台设备推送），这一次点击也不会丢，
+// 同时用位移阈值把「滑动/拖拽」排除在外，不会误记分。
+let projPress = null;
+let lastInteractAt = 0;
+
+function noteInteraction() { lastInteractAt = Date.now(); }
+
+function onProjectorPointerDown(e) {
+  const btn = e.target && e.target.closest ? e.target.closest('#projector-board .pbtn') : null;
+  if (!btn) { projPress = null; return; }
+  projPress = {
+    x: e.clientX, y: e.clientY,
+    gid: Number(btn.dataset.gid),
+    delta: Number(btn.dataset.delta),
+    at: Date.now(),
+  };
+}
+
+function onProjectorPointerUp(e) {
+  const press = projPress;
+  projPress = null;
+  if (!press || !press.gid || !press.delta) return;
+  if (Date.now() - press.at > 1500) return;                         // 按住太久，当作不是点击
+  if (Math.hypot(e.clientX - press.x, e.clientY - press.y) > 12) return;  // 滑动/拖拽不算点击
+  let gid = press.gid, delta = press.delta;
+  const el = document.elementFromPoint(e.clientX, e.clientY);
+  const btn = el && el.closest ? el.closest('#projector-board .pbtn') : null;
+  if (btn) { gid = Number(btn.dataset.gid); delta = Number(btn.dataset.delta); }
+  addScore(gid, delta);
+}
+
+function cancelProjectorPress() { projPress = null; }
+
 // ---------------- 语音播报（浏览器自带 TTS） ----------------
 const VOICE_KEY = 'jiafen.voiceOn';
 const VOICE_MERGE_MS = 500;        // 连点合并窗口：同一对象同方向的连续操作合成一句
@@ -1110,6 +1194,13 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#import-file').addEventListener('change', handleImportFile);
   $('#btn-projector').addEventListener('click', openProjector);
   $('#projector-close').addEventListener('click', closeProjector);
+  // 投屏加减分：用 pointerup 兜底，卡片被重建也不丢点击
+  $('#projector-board').addEventListener('pointerdown', onProjectorPointerDown);
+  document.addEventListener('pointerup', onProjectorPointerUp);
+  document.addEventListener('pointercancel', cancelProjectorPress);
+  // 记录最近一次操作时间：手在屏幕上时不要触发后台对账刷新
+  document.addEventListener('pointerdown', noteInteraction, true);
+  document.addEventListener('keydown', noteInteraction, true);
   $('#board').addEventListener('pointerdown', onBoardPointerDown);
   document.addEventListener('pointermove', onDocPointerMove);
   document.addEventListener('pointerup', onDocPointerUp);
