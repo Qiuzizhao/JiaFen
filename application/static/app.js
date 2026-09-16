@@ -886,15 +886,12 @@ function cancelProjectorPress() { projPress = null; }
 
 // ---------------- 语音播报（浏览器自带 TTS） ----------------
 const VOICE_KEY = 'jiafen.voiceOn';
-const VOICE_MERGE_MS = 500;        // 连点合并窗口：同一对象同方向的连续操作合成一句
 // 默认开启：只有本机明确关过（存了 '0'）才保持关闭
 const voiceStored = localStorage.getItem(VOICE_KEY);
 let voiceOn = voiceStored === null ? true : voiceStored === '1';
 let voicePrimed = false;
 let voiceQueue = [];
 let voiceSpeaking = false;
-let voicePending = null;
-let voiceTimer = null;
 
 function voiceSupported() {
   return typeof speechSynthesis !== 'undefined' && typeof SpeechSynthesisUtterance !== 'undefined';
@@ -918,12 +915,17 @@ function pickVoice() {
   if (!voiceSupported()) return null;
   const voices = speechSynthesis.getVoices() || [];
   if (!voices.length) return null;
+  const isOnline = (v) => /online|natural/i.test(v.name);
   const zh = voices.filter(v => /^zh/i.test(v.lang));
   const pool = zh.length ? zh : voices;
   const zhCN = pool.filter(v => /zh[-_]CN/i.test(v.lang));
-  // 在线/自然音色（如 Microsoft Xiaoxiao Online）通常比本地老音色更响亮清晰，优先用
-  return zhCN.find(v => /online|natural/i.test(v.name))
-    || zhCN.find(v => /xiaoxiao|yunxi|huihui|yaoyao|kangkang|xiaoyi|tingting|female/i.test(v.name))
+  // 优先设备本地音色（Windows 自带，如 Microsoft Huihui）：延迟低、断网也能用；
+  // 在线音色（Microsoft Xiaoxiao Online 等）要联网合成、首字延迟高，只作兜底
+  const local = (zhCN.length ? zhCN : pool).filter(v => !isOnline(v));
+  return local.find(v => /huihui|yaoyao|kangkang|xiaoxiao|yunxi|xiaoyi|tingting|female/i.test(v.name))
+    || local[0]
+    || zhCN.find(isOnline)
+    || pool.find(isOnline)
     || zhCN[0]
     || pool[0];
 }
@@ -968,26 +970,10 @@ function primeVoiceOnce() {
   } catch (_) {}
 }
 
-function flushVoicePending() {
-  clearTimeout(voiceTimer);
-  const p = voicePending;
-  voicePending = null;
-  if (!p) return;
-  speak(p.label + (p.sign > 0 ? '加' : '扣') + cnNum(p.amount) + '分');
-}
-
-// label 用小组名或「全班」
+// label 用小组名或「全班」；每次加减分立刻播一句，不做连点合并
 function announceScore(label, delta) {
   if (!voiceOn || !voiceSupported() || !delta) return;
-  const sign = delta > 0 ? 1 : -1;
-  if (voicePending && voicePending.label === label && voicePending.sign === sign) {
-    voicePending.amount += Math.abs(delta);
-  } else {
-    flushVoicePending();
-    voicePending = { label, sign, amount: Math.abs(delta) };
-  }
-  clearTimeout(voiceTimer);
-  voiceTimer = setTimeout(flushVoicePending, VOICE_MERGE_MS);
+  speak(label + (delta > 0 ? '加' : '扣') + cnNum(delta) + '分');
 }
 
 function renderVoiceButtons() {
@@ -1010,8 +996,6 @@ function setVoiceOn(on) {
   localStorage.setItem(VOICE_KEY, voiceOn ? '1' : '0');
   if (!voiceOn) {
     voiceQueue = [];
-    voicePending = null;
-    clearTimeout(voiceTimer);
     voiceSpeaking = false;
     if (voiceSupported()) { try { speechSynthesis.cancel(); } catch (_) {} }
   }
