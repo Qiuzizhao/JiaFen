@@ -794,7 +794,13 @@ def import_students(cid):
             added += 1
     db.commit()
     if added:
-        broadcast({"kind": "roster", "class_id": cid, "client": (data.get("client") or "")[:32]})
+        # 导入时可能顺手建了新小组，别的设备要整页对账才能看到新组
+        broadcast({
+            "kind": "roster",
+            "class_id": cid,
+            "client": (data.get("client") or "")[:32],
+            "groups_changed": bool(created_groups),
+        })
     return jsonify({"ok": True, "added": added, "groups_created": created_groups})
 
 
@@ -855,10 +861,11 @@ def delete_student(sid):
     cls = _own_student(sid)
     if not cls:
         return jsonify({"error": "学生不存在"}), 404
+    data = request.get_json(silent=True) or {}
     db = get_db()
     db.execute("DELETE FROM students WHERE id=?", (sid,))
     db.commit()
-    broadcast({"kind": "roster", "class_id": cls["id"]})
+    broadcast({"kind": "roster", "class_id": cls["id"], "client": (data.get("client") or "")[:32]})
     return jsonify({"ok": True})
 
 

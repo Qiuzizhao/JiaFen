@@ -17,11 +17,11 @@ const state = {
   // 班级名单弹窗的状态（展开哪一行的菜单、批量导入面板是否打开等）
   rosterOpen: false,
   rosterMenu: null,
-  rosterAdd: false,
   rosterAddGid: '',
+  rosterAdded: [],     // 本次连续添加的学生 id（栈顶＝撤销上一个）
   rosterImport: false,
-  rosterFocus: false,
   rosterMsg: '',
+  rosterSig: '',       // 上次渲染的名单指纹，名单没变就不重画
 };
 
 function esc(s) {
@@ -345,6 +345,9 @@ function setGroupScore(gid, score, rerender = true) {
   if (g) g.score = score;
   const el = document.querySelector('#board .group-card[data-gid="' + gid + '"] .gscore');
   if (el) el.textContent = score;
+  // 名单窗口开着的话，组头上的「小组分」也跟着变，但不动名单本身
+  const pill = document.querySelector('#roster-body .roster-group[data-gid="' + gid + '"] .rg-score');
+  if (pill) pill.textContent = '小组分 ' + score;
   if (rerender) refreshScoreViews();
 }
 function setGroupScores(list) {
@@ -399,7 +402,8 @@ async function refresh() {
     renderLeaderboard();
     renderHistory();
     renderProjector();
-    if (state.rosterOpen) renderRoster();
+    // 名单不进分数刷新链路：只有名单本身变了才重画，且拖拽中绝不重建 DOM
+    if (state.rosterOpen && !state.dragActive && rosterSig(getCurrentClass()) !== state.rosterSig) renderRoster();
   } catch (e) { /* 忽略瞬时错误 */ } finally {
     refreshing = false;
     if (refreshQueued) { refreshQueued = false; refresh(); }
@@ -795,6 +799,19 @@ function startSseWatchdog() {
   }, 15000);
 }
 
+// 只同步一个班的名单（别的设备加/改/删/排序时用），不重建记分板和历史
+async function syncClassRoster(cid) {
+  if (!cid) { refresh(); return; }
+  try {
+    const list = await api(`/api/classes/${cid}/students`);
+    const cls = state.classes.find(c => c.id === cid);
+    if (cls) cls.students = list;
+    renderSidebar();
+    if (state.rosterOpen && state.currentClassId === cid
+        && rosterSig(getCurrentClass()) !== state.rosterSig) renderRoster();
+  } catch (e) { refresh(); }
+}
+
 // 其它设备的改动：能局部更新就局部更新，只有结构性变化才整页重新拉取
 function handleRemoteUpdate(data) {
   if (data.client && data.client === CLIENT_ID) return;   // 自己的改动已本地生效
@@ -834,7 +851,9 @@ function handleRemoteUpdate(data) {
     return;
   }
   if (data.kind === 'roster') {
-    refresh();   // 名单有变化：拉最新名单，弹窗开着会一起重画
+    // 别的设备改了名单：只拉这个班的名单，不重建看板和历史
+    if (data.groups_changed) { refresh(); return; }
+    syncClassRoster(data.class_id);
     return;
   }
   refresh();
@@ -1046,19 +1065,24 @@ function openRoster() {
   if (!cls) { alert('请先选择班级'); return; }
   state.rosterOpen = true;
   state.rosterMenu = null;
-  state.rosterAdd = false;
   state.rosterImport = false;
+  state.rosterAdded = [];
   state.rosterMsg = '';
-  $('#roster-msg').textContent = '';
+  state.rosterAddGid = cls.groups.length ? String(cls.groups[0].id) : '';
+  const msg = $('#roster-msg'); if (msg) msg.textContent = '';
+  const search = $('#roster-search'); if (search) search.value = '';
   $('#roster-modal').classList.remove('hidden');
   renderRoster();
 }
 function closeRoster() {
   state.rosterOpen = false;
   state.rosterMenu = null;
-  state.rosterAdd = false;
   state.rosterImport = false;
+  state.rosterAdded = [];
+  state.rosterSig = '';
+  closeRowMenus();
   $('#roster-modal').classList.add('hidden');
+  renderSidebar();   // 名单人数变了，左边班级列表的「N人」跟着更新
 }
 function rosterMsg(text) {
   state.rosterMsg = text || '';
@@ -1066,50 +1090,261 @@ function rosterMsg(text) {
   if (el) el.textContent = state.rosterMsg;
 }
 
-function rosterOptions(cls, sel) {
-  return '<option value="">未分组</option>' + cls.groups.map(g =>
+function groupOf(cls, gid) {
+  const want = (gid == null || gid === '') ? '' : String(gid);
+  if (want === '' || !cls) return null;
+  return (cls.groups || []).find(g => String(g.id) === want) || null;
+}
+function studentGroupId(s) {
+  return (s.group_id == null || s.group_id === '') ? '' : String(s.group_id);
+}
+function nextStudentOrder(cls) {
+  return rosterStudents(cls).reduce((m, s) => Math.max(m, Number(s.sort_order) || 0), 0) + 1;
+}
+// 名单指纹：内容没变就不重画，这样加减分时的对账刷新不会重建整个名单
+function rosterSig(cls) {
+  if (!cls) return '';
+  const stu = rosterStudents(cls).map(s => `${s.id}:${studentGroupId(s)}:${s.sort_order}:${s.name}`).join('|');
+  // 分数不进指纹：加减分只更新那一张卡和名单里的「小组分」小标签，不重建名单
+  const grp = (cls.groups || []).map(g => `${g.id}:${g.name}:${g.color}`).join(',');
+  return stu + '#' + grp;
+}
+function isTouchDevice() {
+  return !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+}
+function quickGroupName(cls, gid) {
+  const g = groupOf(cls, gid);
+  return g ? g.name : '未分组';
+}
+function rosterGroupItems(cls) {
+  const items = (cls.groups || []).map(g => ({ gid: String(g.id), name: g.name, color: g.color || '#5b9bd5' }));
+  items.push({ gid: '', name: '未分组', color: '#cbd5e1' });
+  return items;
+}
+function groupOptionsHTML(cls, sel) {
+  return '<option value="">未分组</option>' + (cls.groups || []).map(g =>
     `<option value="${g.id}"${String(sel) === String(g.id) ? ' selected' : ''}>${esc(g.name)}</option>`
   ).join('');
 }
 
-function rosterRowHTML(cls, s, gid) {
-  const open = state.rosterMenu === s.id;
-  const color = gid === '' ? '#94a3b8' : groupColor(cls, gid);
-  return `
-    <div class="stu-row" data-sid="${s.id}">
-      <button class="stu-grip" title="按住拖动可以换组">⠿</button>
-      <span class="stu-av" style="--c:${esc(color)}">${esc(stuInitial(s.name))}</span>
-      <span class="stu-name">${esc(s.name)}</span>
-      <button class="stu-more${open ? ' on' : ''}" onclick="rosterToggleMenu(${s.id})" title="改名 / 换组 / 删除">⋯</button>
-    </div>` + (open ? `
-    <div class="stu-menu">
-      <div class="sm-row">
-        <input id="stu-name-input" value="${esc(s.name)}" maxlength="20" placeholder="学生姓名">
-        <button class="ghost" onclick="rosterRename(${s.id})">保存</button>
-      </div>
-      <div class="sm-row">
-        <select onchange="rosterMove(${s.id}, this.value)">${rosterOptions(cls, gid)}</select>
-        <button class="ghost danger-ghost" onclick="rosterDelete(${s.id})">删除</button>
-      </div>
-    </div>` : '');
+function rosterRowHTML(cls, s) {
+  const gid = studentGroupId(s);
+  const g = groupOf(cls, gid);
+  const color = g ? (g.color || '#5b9bd5') : '#94a3b8';
+  return `<div class="stu-row" data-sid="${s.id}" data-gid="${esc(gid)}">`
+    + `<button class="stu-grip" title="按住拖动可以换组" aria-label="拖动排序">⠿</button>`
+    + `<span class="stu-av" style="--c:${esc(color)}">${esc(stuInitial(s.name))}</span>`
+    + `<span class="stu-name">${esc(s.name)}</span>`
+    + `<button class="stu-more" title="改名 / 换组 / 删除" aria-label="更多操作">⋯</button>`
+    + `</div>`;
 }
 
-function rosterGroupHTML(cls, gid, name, color, isNone) {
-  const list = studentsOfGroup(cls, gid);
-  const rows = list.map(s => rosterRowHTML(cls, s, gid)).join('');
-  const empty = isNone
+function rosterGroupHTML(cls, gid) {
+  const want = (gid == null || gid === '') ? '' : String(gid);
+  const g = groupOf(cls, want);
+  const list = studentsOfGroup(cls, want);
+  const color = g ? (g.color || '#5b9bd5') : '#cbd5e1';
+  const rows = list.map(s => rosterRowHTML(cls, s)).join('');
+  const empty = want === ''
     ? '还没有未分组的学生'
-    : '这一组还没有学生，点右边「＋ 添加学生」，或把别的学生拖过来';
-  return `
-    <section class="roster-group" data-gid="${gid}">
+    : '这一组还没有学生，点「＋ 加学生」直接加，或把别的学生拖过来';
+  const score = g ? (Number(g.score) || 0) : null;
+  return `<section class="roster-group${want === '' ? ' rg-ungrouped' : ''}" data-gid="${esc(want)}" style="--c:${esc(color)}">
       <div class="rg-head">
-        <span class="rg-dot"${color ? ` style="background:${esc(color)}"` : ''}></span>
-        <span class="rg-name">${esc(name)}</span>
-        <span class="rg-meta">${list.length}人</span>
-        <button class="rg-add" onclick="rosterAddTo('${gid}')">＋ 添加学生</button>
+        <span class="rg-dot"></span>
+        <span class="rg-name">${esc(g ? g.name : '未分组')}</span>
+        <span class="rg-count">${list.length}人</span>
+        ${score == null ? '<span class="rg-score">拖进来就是没分组</span>' : `<span class="rg-score">小组分 ${score}</span>`}
+        <button class="rg-add" data-gid="${esc(want)}">＋ 加学生</button>
       </div>
       <div class="rg-rows">${rows || `<div class="rg-none">${empty}</div>`}</div>
     </section>`;
+}
+
+// ---- 顶部快速添加条：选一次组，然后一直敲名字回车 ----
+function renderRosterChips(cls) {
+  const box = $('#roster-chips');
+  if (!box) return;
+  box.innerHTML = rosterGroupItems(cls).map(it =>
+    `<button type="button" class="rq-chip${String(state.rosterAddGid) === it.gid ? ' on' : ''}" data-gid="${esc(it.gid)}">`
+    + `<i style="background:${esc(it.color)}"></i>${esc(it.name)}<span class="rq-n">0</span></button>`
+  ).join('');
+  updateQuickPlaceholder(cls);
+}
+function updateQuickPlaceholder(cls) {
+  const input = $('#stu-new-name');
+  if (input) input.placeholder = `输入姓名，回车加进「${quickGroupName(cls, state.rosterAddGid)}」`;
+}
+function renderRosterNav(cls) {
+  const nav = $('#roster-nav');
+  if (!nav) return;
+  nav.innerHTML = '<div class="rn-title">快速跳转</div>' + rosterGroupItems(cls).map(it =>
+    `<button type="button" class="rn-item" data-gid="${esc(it.gid)}"><i style="background:${esc(it.color)}"></i>`
+    + `<span>${esc(it.name)}</span><b>0</b></button>`
+  ).join('');
+}
+function refreshRosterCounts() {
+  const cls = getCurrentClass();
+  if (!cls) return;
+  const all = rosterStudents(cls);
+  const un = studentsOfGroup(cls, '').length;
+  const sub = $('#roster-sub');
+  if (sub) sub.textContent = `${cls.name} · ${all.length}人 · ${cls.groups.length}组` + (un ? ` · 未分组 ${un}人` : '');
+  const chipBox = $('#roster-chips');
+  if (chipBox) chipBox.querySelectorAll('.rq-chip').forEach(chip => {
+    const el = chip.querySelector('.rq-n');
+    if (el) el.textContent = studentsOfGroup(cls, chip.dataset.gid || '').length;
+  });
+  const nav = $('#roster-nav');
+  if (nav) nav.querySelectorAll('.rn-item').forEach(item => {
+    const b = item.querySelector('b');
+    if (b) b.textContent = studentsOfGroup(cls, item.dataset.gid || '').length;
+  });
+  const body = $('#roster-body');
+  if (!body) { state.rosterSig = rosterSig(cls); return; }
+  body.querySelectorAll('.roster-group').forEach(sec => {
+    const gid = sec.dataset.gid || '';
+    const list = studentsOfGroup(cls, gid);
+    const pill = sec.querySelector('.rg-count');
+    if (pill) pill.textContent = list.length + '人';
+    const rows = sec.querySelector('.rg-rows');
+    if (!rows) return;
+    const ph = rows.querySelector('.rg-none');
+    const tip = gid === '' ? '还没有未分组的学生' : '这一组还没有学生，点「＋ 加学生」直接加，或把别的学生拖过来';
+    if (list.length && ph) ph.remove();
+    else if (!list.length && !ph) rows.insertAdjacentHTML('beforeend', `<div class="rg-none">${tip}</div>`);
+  });
+  // 本地改完就把指纹更新掉，后台对账时才知道「名单没变，不用重画」
+  state.rosterSig = rosterSig(cls);
+}
+function renderUndoBtn() {
+  const btn = $('#roster-undo');
+  if (!btn) return;
+  const sid = state.rosterAdded[state.rosterAdded.length - 1];
+  const found = (sid == null) ? null : findStudent(sid);
+  if (!found) { btn.classList.add('hidden'); btn.textContent = ''; return; }
+  btn.classList.remove('hidden');
+  btn.textContent = `撤销上一个：${found.stu.name}`;
+}
+function rosterQuickFocus(gid) {
+  const cls = getCurrentClass();
+  if (!cls) return;
+  state.rosterAddGid = (gid == null || gid === '') ? '' : String(gid);
+  const box = $('#roster-chips');
+  if (box) box.querySelectorAll('.rq-chip').forEach(chip =>
+    chip.classList.toggle('on', (chip.dataset.gid || '') === state.rosterAddGid));
+  updateQuickPlaceholder(cls);
+  const input = $('#stu-new-name');
+  if (input) { input.focus(); if (!isTouchDevice()) input.select(); }
+}
+function rosterScrollToGroup(gid) {
+  const body = $('#roster-body');
+  const sec = groupSection(gid);
+  if (!body || !sec) return;
+  const top = sec.getBoundingClientRect().top - body.getBoundingClientRect().top + body.scrollTop - 2;
+  if (body.scrollTo) body.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+  else body.scrollTop = Math.max(0, top);
+  const want = (gid == null || gid === '') ? '' : String(gid);
+  document.querySelectorAll('#roster-nav .rn-item').forEach(item =>
+    item.classList.toggle('on', (item.dataset.gid || '') === want));
+}
+function stuRowEl(sid) {
+  const body = $('#roster-body');
+  return body ? body.querySelector(`.stu-row[data-sid="${Number(sid)}"]`) : null;
+}
+function groupSection(gid) {
+  const body = $('#roster-body');
+  if (!body) return null;
+  const want = (gid == null || gid === '') ? '' : String(gid);
+  let found = null;
+  body.querySelectorAll('.roster-group').forEach(sec => {
+    if (!found && (sec.dataset.gid || '') === want) found = sec;
+  });
+  return found;
+}
+function insertStudentRow(cls, stu) {
+  const sec = groupSection(studentGroupId(stu));
+  if (!sec) return null;
+  const rows = sec.querySelector('.rg-rows');
+  const ph = rows.querySelector('.rg-none');
+  if (ph) ph.remove();
+  rows.insertAdjacentHTML('beforeend', rosterRowHTML(cls, stu));
+  const row = rows.lastElementChild;
+  applyRosterSearchToRow(row);
+  return row;
+}
+// ---- 搜索：本地过滤，不重新请求 ----
+function applyRosterSearch() {
+  const input = $('#roster-search');
+  const q = input ? input.value.trim().toLowerCase() : '';
+  const body = $('#roster-body');
+  if (!body) return;
+  body.querySelectorAll('.roster-group').forEach(sec => {
+    let visible = 0;
+    sec.querySelectorAll('.stu-row').forEach(row => {
+      const nm = (row.querySelector('.stu-name') || {}).textContent || '';
+      const hit = !q || nm.toLowerCase().indexOf(q) >= 0;
+      row.classList.toggle('search-hidden', !hit);
+      if (hit) visible++;
+    });
+    sec.classList.toggle('search-dim', !!q && visible === 0);
+    const none = sec.querySelector('.rg-none');
+    if (none) none.classList.toggle('search-hidden', !!q);
+  });
+}
+function applyRosterSearchToRow(row) {
+  if (!row) return;
+  const input = $('#roster-search');
+  const q = input ? input.value.trim().toLowerCase() : '';
+  const nm = (row.querySelector('.stu-name') || {}).textContent || '';
+  row.classList.toggle('search-hidden', !!q && nm.toLowerCase().indexOf(q) < 0);
+}
+// ---- 行内「⋯」：贴着这一行的小浮层，不再把下面的学生顶下去 ----
+function buildRowMenu(cls, s) {
+  const menu = document.createElement('div');
+  menu.className = 'stu-menu';
+  menu.innerHTML = `<div class="sm-grp">改名</div>
+    <div class="sm-row"><input class="sm-name" value="${esc(s.name)}" maxlength="20" placeholder="学生姓名"><button class="sm-save primary">保存</button></div>
+    <div class="sm-grp">换到哪一组</div>
+    <div class="sm-row"><select class="sm-group">${groupOptionsHTML(cls, studentGroupId(s))}</select><button class="sm-del danger-ghost">删除</button></div>`;
+  menu.querySelector('.sm-save').addEventListener('click', () => rosterRename(s.id));
+  menu.querySelector('.sm-del').addEventListener('click', () => rosterDelete(s.id));
+  menu.querySelector('.sm-group').addEventListener('change', e => rosterMove(s.id, e.target.value));
+  const nameInput = menu.querySelector('.sm-name');
+  nameInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); rosterRename(s.id); }
+    else if (e.key === 'Escape') { e.stopPropagation(); closeRowMenus(); }
+  });
+  return menu;
+}
+function rosterToggleMenu(sid) {
+  const row = stuRowEl(sid);
+  if (!row) return;
+  if (state.rosterMenu === sid) { closeRowMenus(); return; }
+  closeRowMenus();
+  const found = findStudent(sid);
+  if (!found) return;
+  const menu = buildRowMenu(found.cls, found.stu);
+  row.appendChild(menu);
+  row.classList.add('menu-open');
+  const more = row.querySelector('.stu-more');
+  if (more) more.classList.add('on');
+  state.rosterMenu = sid;
+  // 下面放不下就翻到行的上方，保证不用滚动也能看清
+  const body = $('#roster-body');
+  if (body) {
+    const br = body.getBoundingClientRect();
+    const rr = row.getBoundingClientRect();
+    if (rr.bottom + menu.offsetHeight + 8 > br.bottom && rr.top - menu.offsetHeight - 8 > br.top) menu.classList.add('up');
+  }
+  const inp = menu.querySelector('.sm-name');
+  if (inp && !isTouchDevice()) { inp.focus(); inp.select(); }
+}
+function closeRowMenus() {
+  document.querySelectorAll('#roster-body .stu-menu').forEach(m => m.remove());
+  document.querySelectorAll('#roster-body .stu-row.menu-open').forEach(r => r.classList.remove('menu-open'));
+  document.querySelectorAll('#roster-body .stu-more.on').forEach(b => b.classList.remove('on'));
+  state.rosterMenu = null;
 }
 
 function rosterImportHTML() {
@@ -1124,138 +1359,180 @@ function rosterImportHTML() {
     </div>`;
 }
 
-function rosterAddHTML(cls) {
-  return `
-    <div class="roster-add">
-      <input id="stu-new-name" placeholder="学生姓名，回车即可连续添加" maxlength="20">
-      <select id="stu-new-group">${rosterOptions(cls, state.rosterAddGid)}</select>
-      <button class="primary" onclick="rosterCreate()">添加</button>
-      <button class="ghost" onclick="rosterAddCancel()">取消</button>
-    </div>`;
-}
-
 function renderRoster() {
   if (!state.rosterOpen) return;
   const cls = getCurrentClass();
   if (!cls) { closeRoster(); return; }
+  const body = $('#roster-body');
+  if (!body) return;
   const all = rosterStudents(cls);
-  $('#roster-sub').textContent = `${cls.name} · ${all.length}人 · ${cls.groups.length}组`;
+  const keepScroll = body.scrollTop;
+  if (state.rosterAddGid !== '' && !groupOf(cls, state.rosterAddGid)) {
+    state.rosterAddGid = cls.groups.length ? String(cls.groups[0].id) : '';
+  }
 
   let html = '';
   if (state.rosterImport) html += rosterImportHTML();
-  if (state.rosterAdd) html += rosterAddHTML(cls);
   if (!cls.groups.length && !all.length) {
     html += '<div class="roster-empty">这个班还没有小组，也还没有学生。<br>先在记分板上「＋ 添加小组」建好小组，再点上面的「批量导入」，把班级名单一行一个粘进来。</div>';
   } else {
-    cls.groups.forEach(g => { html += rosterGroupHTML(cls, g.id, g.name, g.color, false); });
-    html += rosterGroupHTML(cls, '', '未分组', '', true);
+    cls.groups.forEach(g => { html += rosterGroupHTML(cls, g.id); });
+    html += rosterGroupHTML(cls, '');
   }
-  const body = $('#roster-body');
   body.innerHTML = html;
+  body.scrollTop = keepScroll;
 
-  const nameEl = $('#stu-new-name');
-  if (nameEl) {
-    nameEl.addEventListener('keydown', e => {
-      if (e.key === 'Enter') { e.preventDefault(); rosterCreate(); }
-      else if (e.key === 'Escape') { rosterAddCancel(); }
-    });
-    if (state.rosterFocus) { nameEl.focus(); state.rosterFocus = false; }
-  }
+  renderRosterChips(cls);
+  renderRosterNav(cls);
+  refreshRosterCounts();
+  renderUndoBtn();
+  applyRosterSearch();
+  state.rosterSig = rosterSig(cls);
+  if (state.rosterImport) { const ta = $('#roster-import-text'); if (ta) ta.focus(); }
 }
 
-function rosterToggleMenu(sid) {
-  state.rosterMenu = (state.rosterMenu === sid) ? null : sid;
-  renderRoster();
-  const box = $('#roster-body');
-  const input = $('#stu-name-input');
-  if (input && state.rosterMenu === sid) { input.focus(); input.select(); }
-  else if (box && state.rosterMenu === sid) box.focus();
+// 一个名字框里可以用空格 / 逗号一次敲好几个人
+function parseStudentNames(raw) {
+  return String(raw || '').split(/[\s,，、;；\/]+/).map(s => s.trim()).filter(Boolean).slice(0, 60);
 }
 
-function rosterAddTo(gid) {
-  state.rosterAddGid = (gid == null ? '' : String(gid));
-  state.rosterAdd = true;
-  state.rosterImport = false;
-  state.rosterMenu = null;
-  state.rosterFocus = true;
-  renderRoster();
-}
-function rosterAddCancel() {
-  state.rosterAdd = false;
-  state.rosterFocus = false;
-  renderRoster();
-}
-
+// 连续添加：加完光标和键盘都留在输入框，一个接一个敲；加错了用「撤销上一个」退回
 async function rosterCreate() {
   const cls = getCurrentClass();
   if (!cls) return;
-  const nameEl = $('#stu-new-name');
-  if (!nameEl) return;
-  const name = (nameEl.value || '').trim();
-  if (!name) { nameEl.focus(); return; }
-  const gid = $('#stu-new-group').value;
+  const input = $('#stu-new-name');
+  if (!input) return;
+  const names = parseStudentNames(input.value);
+  if (!names.length) { input.focus(); return; }
+  const gid = state.rosterAddGid || '';
+  const btn = $('#roster-add-btn');
+  if (btn) btn.disabled = true;
+  let added = 0;
   try {
-    await api(`/api/classes/${cls.id}/students`, {
-      method: 'POST',
-      body: { name, group_id: gid || null, client: CLIENT_ID },
-    });
-    state.rosterAdd = true;          // 连续录入：添加行留着
-    state.rosterFocus = true;
-    rosterMsg(`已添加「${name}」`);
-    await refresh();
-    renderRoster();
-  } catch (e) { alert(e.message); }
+    for (const name of names) {
+      const res = await api(`/api/classes/${cls.id}/students`, {
+        method: 'POST',
+        body: { name, group_id: gid || null, client: CLIENT_ID },
+      });
+      const stu = {
+        id: res.id, class_id: cls.id,
+        group_id: gid ? Number(gid) : null,
+        name: res.name || name,
+        sort_order: nextStudentOrder(cls),
+      };
+      cls.students = rosterStudents(cls).concat([stu]);
+      state.rosterAdded.push(stu.id);
+      insertStudentRow(cls, stu);
+      added += 1;
+    }
+    input.value = '';
+    refreshRosterCounts();
+    renderUndoBtn();
+    rosterMsg(`已把 ${added} 人加进「${quickGroupName(cls, gid)}」`);
+  } catch (e) {
+    alert(e.message);
+    if (added) { refreshRosterCounts(); renderUndoBtn(); }
+  } finally {
+    if (btn) btn.disabled = false;
+    input.focus();
+  }
+}
+
+// 撤销上一个：把刚加进名单的那个人删掉（只动名单，不影响小组分）
+async function rosterUndoLast() {
+  const sid = state.rosterAdded.pop();
+  if (sid == null) { rosterMsg('没有刚添加的学生可以撤销'); return; }
+  const found = findStudent(sid);
+  if (!found) { renderUndoBtn(); return; }
+  const name = found.stu.name;
+  try {
+    await api('/api/students/' + sid, { method: 'DELETE', body: { client: CLIENT_ID } });
+    found.cls.students = rosterStudents(found.cls).filter(s => s.id !== sid);
+    const row = stuRowEl(sid);
+    if (row) row.remove();
+    refreshRosterCounts();
+    renderUndoBtn();
+    applyRosterSearch();
+    rosterMsg(`已撤销添加「${name}」`);
+  } catch (e) {
+    state.rosterAdded.push(sid);
+    alert(e.message);
+  }
 }
 
 async function rosterRename(sid) {
   const found = findStudent(sid);
-  if (!found) return;
-  const el = $('#stu-name-input');
+  const row = stuRowEl(sid);
+  if (!found || !row) { closeRowMenus(); return; }
+  const el = row.querySelector('.sm-name');
   const name = ((el && el.value) || '').trim();
   if (!name) { alert('姓名不能为空'); return; }
-  if (name === found.stu.name) { state.rosterMenu = null; renderRoster(); return; }
+  if (name === found.stu.name) { closeRowMenus(); return; }
+  const old = found.stu.name;
   try {
     await api('/api/students/' + sid, { method: 'PATCH', body: { name, client: CLIENT_ID } });
-    state.rosterMenu = null;
-    rosterMsg(`「${found.stu.name}」改名为「${name}」`);
-    await refresh();
-    renderRoster();
+    found.stu.name = name;
+    const nm = row.querySelector('.stu-name'); if (nm) nm.textContent = name;
+    const av = row.querySelector('.stu-av'); if (av) av.textContent = stuInitial(name);
+    state.rosterSig = rosterSig(found.cls);
+    closeRowMenus();
+    applyRosterSearch();
+    rosterMsg(`「${old}」改名为「${name}」`);
   } catch (e) { alert(e.message); }
 }
 
 async function rosterMove(sid, gid) {
   const found = findStudent(sid);
-  if (!found) return;
+  const row = stuRowEl(sid);
+  if (!found || !row) { closeRowMenus(); return; }
+  const want = (gid == null || gid === '') ? '' : String(gid);
+  if (studentGroupId(found.stu) === want) { closeRowMenus(); return; }
   try {
     await api('/api/students/' + sid, {
       method: 'PATCH',
-      body: { group_id: gid || null, client: CLIENT_ID },
+      body: { group_id: want || null, client: CLIENT_ID },
     });
-    state.rosterMenu = null;
-    const g = gid ? found.cls.groups.find(x => String(x.id) === String(gid)) : null;
-    rosterMsg(`「${found.stu.name}」${g ? '移到' + g.name : '移到未分组'}`);
-    await refresh();
-    renderRoster();
+    found.stu.group_id = want ? Number(want) : null;
+    found.stu.sort_order = nextStudentOrder(found.cls);
+    const sec = groupSection(want);
+    if (sec) {
+      const rows = sec.querySelector('.rg-rows');
+      const ph = rows.querySelector('.rg-none');
+      if (ph) ph.remove();
+      rows.appendChild(row);
+      row.dataset.gid = want;
+      const g = groupOf(found.cls, want);
+      const av = row.querySelector('.stu-av');
+      if (av) av.style.setProperty('--c', g ? (g.color || '#5b9bd5') : '#94a3b8');
+    }
+    closeRowMenus();
+    refreshRosterCounts();
+    applyRosterSearch();
+    rosterMsg(`「${found.stu.name}」移到${quickGroupName(found.cls, want)}`);
   } catch (e) { alert(e.message); }
 }
 
 async function rosterDelete(sid) {
   const found = findStudent(sid);
-  if (!found) return;
-  if (!confirm(`把「${found.stu.name}」从班级名单里删除？\n（只是名单里去掉这个人，小组分数不受影响）`)) { renderRoster(); return; }
+  if (!found) { closeRowMenus(); return; }
+  if (!confirm(`把「${found.stu.name}」从班级名单里删除？\n（只是名单里去掉这个人，小组分数不受影响）`)) { closeRowMenus(); return; }
   try {
     await api('/api/students/' + sid, { method: 'DELETE', body: { client: CLIENT_ID } });
-    state.rosterMenu = null;
+    found.cls.students = rosterStudents(found.cls).filter(s => s.id !== sid);
+    const row = stuRowEl(sid);
+    if (row) row.remove();
+    state.rosterAdded = state.rosterAdded.filter(x => x !== sid);
+    closeRowMenus();
+    refreshRosterCounts();
+    renderUndoBtn();
+    applyRosterSearch();
     rosterMsg(`已删除「${found.stu.name}」`);
-    await refresh();
-    renderRoster();
   } catch (e) { alert(e.message); }
 }
 
 function rosterImportOpen() {
   state.rosterImport = true;
-  state.rosterAdd = false;
-  state.rosterMenu = null;
+  closeRowMenus();
   renderRoster();
   const ta = $('#roster-import-text');
   if (ta) ta.focus();
@@ -1282,7 +1559,6 @@ async function rosterImportSubmit() {
     }
     rosterMsg(msg);
     await refresh();
-    renderRoster();
   } catch (e) { alert(e.message); }
 }
 
@@ -1418,16 +1694,31 @@ async function commitRosterOrder() {
     .map(s => ({ id: s.id, group_id: (s.group_id == null || s.group_id === '') ? null : s.group_id }));
   const same = items.length === before.length
     && items.every((it, i) => it.id === before[i].id && it.group_id === before[i].group_id);
-  if (same) { renderRoster(); return; }
+  if (same) { refreshRosterCounts(); return; }
+  // 先按界面上的顺序落到本地（不用等网络），再后台提交
+  applyLocalRosterOrder(cls, items);
+  refreshRosterCounts();
+  applyRosterSearch();
   try {
     await api(`/api/classes/${cls.id}/students/reorder`, {
       method: 'POST',
       body: { items, client: CLIENT_ID },
     });
     rosterMsg('名单顺序已保存');
-  } catch (e) { alert(e.message); }
-  await refresh();
-  renderRoster();
+  } catch (e) {
+    alert(e.message);
+    await refresh();   // 提交失败：拉回服务端的权威顺序
+  }
+}
+
+function applyLocalRosterOrder(cls, items) {
+  const byId = new Map(rosterStudents(cls).map(s => [s.id, s]));
+  items.forEach((it, idx) => {
+    const s = byId.get(it.id);
+    if (!s) return;
+    s.group_id = it.group_id;
+    s.sort_order = idx;
+  });
 }
 // ---------------- 长按拖拽排序 ----------------
 let drag = null;
@@ -1569,7 +1860,39 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#roster-close').addEventListener('click', closeRoster);
   $('#roster-import-btn').addEventListener('click', rosterImportOpen);
   $('#roster-export-btn').addEventListener('click', rosterExport);
-  $('#roster-add-btn').addEventListener('click', () => rosterAddTo(''));
+  $('#roster-add-btn').addEventListener('click', rosterCreate);
+  $('#roster-undo').addEventListener('click', rosterUndoLast);
+  $('#roster-search').addEventListener('input', applyRosterSearch);
+  $('#stu-new-name').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); rosterCreate(); }
+    else if (e.key === 'Escape') { e.preventDefault(); e.target.value = ''; }
+  });
+  // 点组标签＝把「快速添加」切到这一组；点组头「＋ 加学生」＝切到这一组并直接聚焦输入框
+  $('#roster-chips').addEventListener('click', e => {
+    const chip = e.target.closest ? e.target.closest('.rq-chip') : null;
+    if (chip) rosterQuickFocus(chip.dataset.gid || '');
+  });
+  $('#roster-nav').addEventListener('click', e => {
+    const item = e.target.closest ? e.target.closest('.rn-item') : null;
+    if (item) rosterScrollToGroup(item.dataset.gid || '');
+  });
+  $('#roster-body').addEventListener('click', e => {
+    const add = e.target.closest ? e.target.closest('.rg-add') : null;
+    if (add) { rosterQuickFocus(add.dataset.gid || ''); return; }
+    const more = e.target.closest ? e.target.closest('.stu-more') : null;
+    if (more) {
+      const row = more.closest('.stu-row');
+      if (row) rosterToggleMenu(Number(row.dataset.sid));
+    }
+  });
+  // 点空白处收起行内小浮层
+  document.addEventListener('pointerdown', e => {
+    if (!state.rosterOpen || state.rosterMenu == null) return;
+    const t = e.target;
+    if (!t || !t.closest) return;
+    if (t.closest('.stu-menu') || t.closest('.stu-more')) return;
+    closeRowMenus();
+  }, true);
   $('#roster-modal').addEventListener('click', e => { if (e.target === $('#roster-modal')) closeRoster(); });
   // 名单里按住拖动手柄排序（监听挂在容器上，重画之后依然有效）
   $('#roster-body').addEventListener('pointerdown', onRosterPointerDown);
@@ -1577,7 +1900,9 @@ document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('pointerup', onRosterPointerUp);
   document.addEventListener('pointercancel', onRosterPointerUp);
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape' && state.rosterOpen && !rdrag) closeRoster();
+    if (e.key !== 'Escape' || !state.rosterOpen) return;
+    if (state.rosterMenu != null) { closeRowMenus(); return; }   // 先收浮层，再关窗口
+    if (!rdrag) closeRoster();
   });
   $('#btn-class-score').addEventListener('click', applyClassCustom);
   $('#class-amount').addEventListener('keydown', e => { if (e.key === 'Enter') applyClassCustom(); });

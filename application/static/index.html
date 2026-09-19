@@ -139,12 +139,29 @@
         <button id="roster-close" class="icon-btn" aria-label="关闭">✕</button>
       </div>
       <div class="roster-tools">
+        <label class="roster-search">
+          <span aria-hidden="true">🔍</span>
+          <input id="roster-search" type="text" placeholder="查找学生，输入姓氏即可定位" autocomplete="off">
+        </label>
         <button id="roster-import-btn" class="ghost">批量导入</button>
         <button id="roster-export-btn" class="ghost">导出名单</button>
-        <button id="roster-add-btn" class="primary">＋ 添加学生</button>
+      </div>
+      <div id="roster-quick" class="roster-quick">
+        <div id="roster-chips" class="rq-chips"></div>
+        <div class="rq-row">
+          <input id="stu-new-name" placeholder="输入姓名，回车就加进小组" maxlength="20" autocomplete="off" enterkeyhint="done">
+          <button id="roster-add-btn" class="primary" type="button">添加</button>
+        </div>
+        <div class="rq-hint">
+          <span>先点一下要加的组，然后连着敲名字按回车，光标和键盘都不会跑</span>
+          <button id="roster-undo" class="rq-undo hidden" type="button">撤销上一个</button>
+        </div>
       </div>
       <p id="roster-msg" class="hint"></p>
-      <div id="roster-body" class="roster-body"></div>
+      <div class="roster-main">
+        <nav id="roster-nav" class="roster-nav" aria-label="快速跳转"></nav>
+        <div id="roster-body" class="roster-body"></div>
+      </div>
       <p class="roster-foot">按住学生左边的 ⠿ 拖动可以换组；点右边的 ⋯ 能改名 / 换组 / 删除。</p>
     </div>
   </div>
