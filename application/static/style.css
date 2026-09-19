@@ -15,7 +15,8 @@
 }
 
 * { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; }
+/* 禁用移动端手势缩放：pan-x pan-y 保留单指滚动、屏蔽双指捏合缩放 */
+html, body { margin: 0; padding: 0; touch-action: pan-x pan-y; }
 body {
   font-family: "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
   background: var(--bg);
@@ -31,7 +32,7 @@ button {
   cursor: pointer;
   border: none;
   border-radius: 10px;
-  touch-action: manipulation;
+  touch-action: pan-x pan-y;
   transition: transform .05s ease, background .15s ease, box-shadow .15s ease;
 }
 button:active { transform: translateY(1px); }
@@ -76,7 +77,7 @@ input {
   font-size: 14px;
   background: #fff;
   color: var(--text);
-  touch-action: manipulation;
+  touch-action: pan-x pan-y;
 }
 input:focus { outline: none; border-color: var(--brand); }
 

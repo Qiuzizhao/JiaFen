@@ -1193,3 +1193,18 @@ document.addEventListener('DOMContentLoaded', () => {
   window.addEventListener('focus', reconcileIfStale);
   init();
 });
+
+/* ---- 禁用移动端浏览器的页面缩放：双指捏合 / 双击放大 / iOS 手势事件 ---- */
+(function blockPageZoom() {
+  const block = e => { if (e.cancelable) e.preventDefault(); };
+  // iOS Safari 的专有手势事件（新版 iOS 已忽略 viewport 里的 user-scalable=no，只能拦事件）
+  ['gesturestart', 'gesturechange', 'gestureend'].forEach(t =>
+    document.addEventListener(t, block, { passive: false }));
+  // 两根手指同时落在屏幕上：拦掉缩放，单指滚动和卡片拖拽不受影响
+  document.addEventListener('touchstart', e => { if (e.touches.length > 1) block(e); }, { passive: false });
+  document.addEventListener('touchmove', e => { if (e.touches.length > 1) block(e); }, { passive: false });
+  // 双击放大
+  document.addEventListener('dblclick', block, { passive: false });
+  // 少数机型会忽略 viewport 设置，用内联样式再兜一层
+  document.documentElement.style.touchAction = 'pan-x pan-y';
+})();
