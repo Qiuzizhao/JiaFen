@@ -92,6 +92,15 @@ def init_db():
             created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
         );
 
+        CREATE TABLE IF NOT EXISTS students (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            class_id INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+            group_id INTEGER REFERENCES groups(id) ON DELETE SET NULL,
+            name TEXT NOT NULL,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+        );
+
         CREATE TABLE IF NOT EXISTS transactions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
@@ -156,6 +165,7 @@ def init_db():
     conn.execute("UPDATE classes SET owner_id=? WHERE owner_id IS NULL", (owner_id,))
     conn.execute("CREATE INDEX IF NOT EXISTS idx_classes_owner ON classes(owner_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_tx_class_id ON transactions(class_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_students_class ON students(class_id)")
     conn.commit()
     conn.close()
 
@@ -493,7 +503,15 @@ def list_classes():
         groups = db.execute(
             "SELECT * FROM groups WHERE class_id=? ORDER BY sort_order ASC, id", (c["id"],)
         ).fetchall()
-        result.append({**dict(c), "groups": [dict(g) for g in groups]})
+        students = db.execute(
+            "SELECT id, class_id, group_id, name, sort_order FROM students "
+            "WHERE class_id=? ORDER BY sort_order ASC, id", (c["id"],)
+        ).fetchall()
+        result.append({
+            **dict(c),
+            "groups": [dict(g) for g in groups],
+            "students": [dict(s) for s in students],
+        })
     return jsonify(result)
 
 
@@ -637,7 +655,214 @@ def delete_group(gid):
 
 
 # ---------------------------------------------------------------------------
-# 记分、撤销、历史
+# 学生名单（各小组名单汇总成班级名单）
+# ---------------------------------------------------------------------------
+# 自动新建小组时的配色，顺序与前端一致
+GROUP_PALETTE = [
+    "#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6",
+    "#06b6d4", "#ec4899", "#84cc16", "#f97316", "#14b8a6",
+]
+# 名单里一行可能写成「第1组,张三」：这些分隔符都当成组分隔
+STUDENT_SEP = re.compile(r"[,，、\t]+")
+
+
+def _own_student(sid):
+    """学生所属班级是不是自己的；不是返回 None"""
+    row = get_db().execute(
+        "SELECT class_id FROM students WHERE id=?", (sid,)
+    ).fetchone()
+    if row is None:
+        return None
+    return own_class(row["class_id"])
+
+
+def _group_in_class(db, cid, gid):
+    """目标小组必须属于这个班；未分组传空值时返回 None"""
+    if gid in (None, "", 0, "0"):
+        return None
+    try:
+        gid = int(gid)
+    except (TypeError, ValueError):
+        return None
+    row = db.execute(
+        "SELECT id FROM groups WHERE id=? AND class_id=?", (gid, cid)
+    ).fetchone()
+    return row["id"] if row else None
+
+
+def _next_student_order(db, cid):
+    row = db.execute(
+        "SELECT COALESCE(MAX(sort_order), 0) AS m FROM students WHERE class_id=?", (cid,)
+    ).fetchone()
+    return int(row["m"]) + 1
+
+
+def _students_json(db, cid):
+    rows = db.execute(
+        "SELECT id, class_id, group_id, name, sort_order FROM students "
+        "WHERE class_id=? ORDER BY sort_order ASC, id",
+        (cid,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+@app.route("/api/classes/<int:cid>/students")
+@login_required
+def list_students(cid):
+    if not own_class(cid):
+        return jsonify({"error": "班级不存在"}), 404
+    return jsonify(_students_json(get_db(), cid))
+
+
+@app.route("/api/classes/<int:cid>/students", methods=["POST"])
+@login_required
+def create_student(cid):
+    """加一个学生到指定小组（不带 group_id 就是未分组）"""
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "学生姓名不能为空"}), 400
+    if not own_class(cid):
+        return jsonify({"error": "班级不存在"}), 404
+    db = get_db()
+    gid = _group_in_class(db, cid, data.get("group_id"))
+    cur = db.execute(
+        "INSERT INTO students(class_id, group_id, name, sort_order) VALUES(?,?,?,?)",
+        (cid, gid, name[:20], _next_student_order(db, cid)),
+    )
+    db.commit()
+    broadcast({"kind": "roster", "class_id": cid, "client": (data.get("client") or "")[:32]})
+    return jsonify({"id": cur.lastrowid, "name": name[:20], "group_id": gid})
+
+
+@app.route("/api/classes/<int:cid>/students/import", methods=["POST"])
+@login_required
+def import_students(cid):
+    """批量粘贴导入。
+
+    一行一个学生；写成「第1组,张三」就直接分到该组，组不存在会自动建一个。
+    只写姓名时进未分组（若传了 default_group_id 则进那个组）。
+    """
+    data = request.get_json(silent=True) or {}
+    text = data.get("text") or ""
+    if not own_class(cid):
+        return jsonify({"error": "班级不存在"}), 404
+    db = get_db()
+    rows = db.execute(
+        "SELECT id, name FROM groups WHERE class_id=? ORDER BY sort_order ASC, id", (cid,)
+    ).fetchall()
+    by_name = {r["name"].strip(): r["id"] for r in rows}
+    group_count = len(rows)
+    default_gid = _group_in_class(db, cid, data.get("default_group_id"))
+    order = _next_student_order(db, cid)
+    added = 0
+    created_groups = []
+    for raw in text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        line = raw.strip()
+        if not line:
+            continue
+        parts = [p.strip() for p in STUDENT_SEP.split(line) if p.strip()]
+        gid = default_gid
+        # 「第1组 张三」这种用空格分的：只有第一段是已知组名或以「组」结尾才当组名
+        if len(parts) == 1 and " " in parts[0]:
+            head, rest = parts[0].split(" ", 1)
+            if rest.strip() and (head in by_name or head.endswith("组")):
+                parts = [head] + [x for x in rest.split(" ") if x.strip()]
+        names = parts
+        if len(parts) >= 2:
+            gname, names = parts[0][:20], parts[1:]
+            gid = by_name.get(gname)
+            if gid is None:
+                cur = db.execute(
+                    "INSERT INTO groups(class_id, name, color, sort_order) VALUES(?,?,?,"
+                    "(SELECT COALESCE(MAX(sort_order),0)+1 FROM groups WHERE class_id=?))",
+                    (cid, gname, GROUP_PALETTE[group_count % len(GROUP_PALETTE)], cid),
+                )
+                gid = cur.lastrowid
+                by_name[gname] = gid
+                group_count += 1
+                created_groups.append(gname)
+        for nm in names:
+            nm = nm.strip()
+            if not nm:
+                continue
+            db.execute(
+                "INSERT INTO students(class_id, group_id, name, sort_order) VALUES(?,?,?,?)",
+                (cid, gid, nm[:20], order),
+            )
+            order += 1
+            added += 1
+    db.commit()
+    if added:
+        broadcast({"kind": "roster", "class_id": cid, "client": (data.get("client") or "")[:32]})
+    return jsonify({"ok": True, "added": added, "groups_created": created_groups})
+
+
+@app.route("/api/classes/<int:cid>/students/reorder", methods=["POST"])
+@login_required
+def reorder_students(cid):
+    """拖动排序 / 跨组移动：一次提交班级里每个学生的新顺序和新组"""
+    data = request.get_json(silent=True) or {}
+    items = data.get("items") or []
+    if not own_class(cid):
+        return jsonify({"error": "班级不存在"}), 404
+    db = get_db()
+    valid = {r["id"] for r in db.execute(
+        "SELECT id FROM students WHERE class_id=?", (cid,)
+    ).fetchall()}
+    ids = [it.get("id") for it in items]
+    if not items or len(ids) != len(valid) or set(ids) != valid:
+        return jsonify({"error": "名单已变化，请刷新后重试"}), 400
+    for idx, it in enumerate(items):
+        gid = _group_in_class(db, cid, it.get("group_id"))
+        db.execute(
+            "UPDATE students SET group_id=?, sort_order=? WHERE id=? AND class_id=?",
+            (gid, idx, it.get("id"), cid),
+        )
+    db.commit()
+    broadcast({"kind": "roster", "class_id": cid, "client": (data.get("client") or "")[:32]})
+    return jsonify({"ok": True})
+
+
+@app.route("/api/students/<int:sid>", methods=["PATCH"])
+@login_required
+def update_student(sid):
+    """改名字 / 换小组"""
+    cls = _own_student(sid)
+    if not cls:
+        return jsonify({"error": "学生不存在"}), 404
+    data = request.get_json(silent=True) or {}
+    db = get_db()
+    if "name" in data:
+        name = (data.get("name") or "").strip()
+        if not name:
+            return jsonify({"error": "学生姓名不能为空"}), 400
+        db.execute("UPDATE students SET name=? WHERE id=?", (name[:20], sid))
+    if "group_id" in data:
+        gid = _group_in_class(db, cls["id"], data.get("group_id"))
+        db.execute(
+            "UPDATE students SET group_id=?, sort_order=? WHERE id=?",
+            (gid, _next_student_order(db, cls["id"]), sid),
+        )
+    db.commit()
+    broadcast({"kind": "roster", "class_id": cls["id"], "client": (data.get("client") or "")[:32]})
+    return jsonify({"ok": True})
+
+
+@app.route("/api/students/<int:sid>", methods=["DELETE"])
+@login_required
+def delete_student(sid):
+    cls = _own_student(sid)
+    if not cls:
+        return jsonify({"error": "学生不存在"}), 404
+    db = get_db()
+    db.execute("DELETE FROM students WHERE id=?", (sid,))
+    db.commit()
+    broadcast({"kind": "roster", "class_id": cls["id"]})
+    return jsonify({"ok": True})
+
+
+# ---------------------------------------------------------------------------# 记分、撤销、历史
 # ---------------------------------------------------------------------------
 @app.route("/api/score", methods=["POST"])
 @login_required
@@ -820,15 +1045,22 @@ def export_data():
     data = []
     for c in classes:
         groups = db.execute("SELECT * FROM groups WHERE class_id=? ORDER BY id", (c["id"],)).fetchall()
+        students = db.execute(
+            "SELECT id, group_id, name, sort_order FROM students WHERE class_id=? "
+            "ORDER BY sort_order ASC, id",
+            (c["id"],),
+        ).fetchall()
         data.append(
             {
                 "id": c["id"],
                 "name": c["name"],
                 "groups": [dict(g) for g in groups],
+                "students": [dict(s) for s in students],
             }
         )
+    # version 2：备份里带上班级名单（version 1 的老备份照样能导入）
     return jsonify(
-        {"version": 1, "exported_at": datetime.now().isoformat(), "classes": data}
+        {"version": 2, "exported_at": datetime.now().isoformat(), "classes": data}
     )
 
 
@@ -840,6 +1072,10 @@ def import_data():
     db = get_db()
     u = current_user()
     # 导入只覆盖自己的班级，其他老师的数据一概不动
+    db.execute(
+        "DELETE FROM students WHERE class_id IN (SELECT id FROM classes WHERE owner_id=?)",
+        (u["id"],),
+    )
     db.execute(
         "DELETE FROM transactions WHERE class_id IN (SELECT id FROM classes WHERE owner_id=?)",
         (u["id"],),
@@ -854,10 +1090,23 @@ def import_data():
             "INSERT INTO classes(name, owner_id) VALUES(?,?)", (c.get("name", ""), u["id"])
         )
         cid = cur.lastrowid
+        # 备份里的小组 id 换成了新库里的 id，学生的分组要跟着映射过去
+        gmap = {}
         for g in c.get("groups", []):
-            db.execute(
+            gcur = db.execute(
                 "INSERT INTO groups(class_id, name, color, score) VALUES(?,?,?,?)",
                 (cid, g.get("name", ""), g.get("color", "#5B9BD5"), int(g.get("score", 0))),
+            )
+            gmap[g.get("id")] = gcur.lastrowid
+        for s in c.get("students", []) or []:
+            db.execute(
+                "INSERT INTO students(class_id, group_id, name, sort_order) VALUES(?,?,?,?)",
+                (
+                    cid,
+                    gmap.get(s.get("group_id")),
+                    (s.get("name") or "")[:20],
+                    int(s.get("sort_order", 0)),
+                ),
             )
     db.commit()
     broadcast()

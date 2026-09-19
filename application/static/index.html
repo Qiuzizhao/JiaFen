@@ -8,7 +8,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png?v=20260915">
   <link rel="icon" href="/favicon.ico?v=20260915" sizes="any">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=20260915">
-  <link rel="stylesheet" href="/style.css?v=20260919">
+  <link rel="stylesheet" href="/style.css?v=20260919b">
 </head>
 <body>
 
@@ -66,6 +66,7 @@
         <div class="board-head">
           <h2 id="current-class-name" class="board-title">请选择班级</h2>
           <div class="board-actions">
+            <button id="btn-roster" class="ghost">📋 班级名单</button>
             <button id="btn-add-group" class="ghost">＋ 添加小组</button>
             <button id="btn-reset" class="ghost danger-ghost">清零本班分数</button>
           </div>
@@ -130,6 +131,24 @@
     </div>
   </div>
 
+  <!-- 班级名单 -->
+  <div id="roster-modal" class="modal hidden">
+    <div class="modal-box roster-box">
+      <div class="modal-head">
+        <h3>班级名单 <span id="roster-sub" class="roster-sub"></span></h3>
+        <button id="roster-close" class="icon-btn" aria-label="关闭">✕</button>
+      </div>
+      <div class="roster-tools">
+        <button id="roster-import-btn" class="ghost">批量导入</button>
+        <button id="roster-export-btn" class="ghost">导出名单</button>
+        <button id="roster-add-btn" class="primary">＋ 添加学生</button>
+      </div>
+      <p id="roster-msg" class="hint"></p>
+      <div id="roster-body" class="roster-body"></div>
+      <p class="roster-foot">按住学生左边的 ⠿ 拖动可以换组；点右边的 ⋯ 能改名 / 换组 / 删除。</p>
+    </div>
+  </div>
+
   <!-- 账号弹窗 -->
   <div id="account-modal" class="modal hidden">
     <div class="modal-box wide">
@@ -163,6 +182,6 @@
     <div id="projector-board" class="projector-board"></div>
   </div>
 
-  <script src="/app.js?v=20260919"></script>
+  <script src="/app.js?v=20260919b"></script>
 </body>
 </html>

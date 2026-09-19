@@ -501,8 +501,79 @@ button.primary.danger:hover { background: var(--down-dark); }
 
 /* 防止移动端输入框聚焦时 iOS 自动放大整个页面：移动端所有输入元素字号 >= 16px */
 html { -webkit-text-size-adjust: 100%; }
+
+/* ---------------- 班级名单弹窗 ---------------- */
+.modal-box.roster-box {
+  width: min(700px, 100%);
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 22px 16px;
+}
+.roster-box h3 { margin: 0; font-size: 18px; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.roster-sub { font-size: 13px; color: var(--muted); font-weight: 400; }
+.roster-tools { display: flex; gap: 8px; margin: 14px 0 4px; flex-wrap: wrap; }
+.roster-body { flex: 1; min-height: 0; overflow-y: auto; margin: 6px -4px 0; padding: 0 4px; }
+.roster-empty { color: var(--muted); font-size: 14px; line-height: 1.8; padding: 16px 2px; }
+.roster-group { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 12px; }
+.roster-group:first-child { border-top: 0; margin-top: 4px; padding-top: 0; }
+.rg-head { display: flex; align-items: center; gap: 8px; padding: 2px 2px 8px; }
+.rg-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; background: #cbd5e1; }
+.rg-name { font-weight: 600; font-size: 14px; }
+.rg-meta { font-size: 12px; color: var(--muted); }
+.rg-add { margin-left: auto; font-size: 12px; font-weight: 600; color: var(--brand-dark); background: #e8f0ff; padding: 5px 10px; border-radius: 8px; }
+.rg-add:hover { background: #dbe8ff; }
+.rg-rows { display: flex; flex-direction: column; }
+.rg-none { color: var(--muted); font-size: 12.5px; padding: 2px 4px 8px; }
+.stu-row { display: flex; align-items: center; gap: 9px; padding: 6px 8px; border-radius: 9px; }
+.stu-row:hover { background: #f6f8fc; }
+.stu-row.dragging { background: #eef4ff; box-shadow: 0 8px 18px rgba(17, 24, 39, .16); position: relative; z-index: 2; }
+.stu-grip { color: #c3cad6; font-size: 13px; line-height: 1; padding: 5px 2px; cursor: grab; touch-action: none; flex: none; }
+.stu-grip:hover { color: var(--muted); }
+.stu-av { width: 24px; height: 24px; border-radius: 50%; background: var(--c, #94a3b8); color: #fff; font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.stu-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.stu-more { width: 28px; height: 26px; border-radius: 7px; color: var(--muted); font-size: 15px; line-height: 1; flex: none; }
+.stu-more:hover, .stu-more.on { background: #eef1f7; color: var(--text); }
+.stu-menu { display: flex; flex-direction: column; gap: 6px; background: #f7f9fc; border: 1px solid var(--line); border-radius: 10px; padding: 8px; margin: 2px 0 8px; }
+.sm-row { display: flex; gap: 8px; }
+.sm-row input, .sm-row select { flex: 1; min-width: 0; padding: 8px 10px; font-size: 14px; }
+.sm-row button { flex: none; padding: 8px 14px; font-size: 13px; }
+.roster-add { display: flex; gap: 8px; background: #f7f9fc; border: 1px solid var(--line); border-radius: 10px; padding: 8px; margin: 4px 0 10px; flex-wrap: wrap; }
+.roster-add input { flex: 1.4 1 160px; min-width: 0; }
+.roster-add select { flex: 1 1 110px; min-width: 0; padding: 8px 10px; font-size: 14px; }
+.roster-add button { flex: none; }
+.roster-import { background: #f7f9fc; border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin: 4px 0 10px; }
+.roster-import textarea {
+  width: 100%;
+  min-height: 120px;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.6;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 9px 10px;
+  resize: vertical;
+  background: #fff;
+  color: var(--text);
+  outline: none;
+}
+.roster-import textarea:focus { border-color: var(--brand); }
+.ri-foot { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.ri-foot .hint { margin: 0; flex: 1 1 160px; }
+.roster-foot { color: var(--muted); font-size: 12px; margin: 8px 0 0; padding-top: 10px; border-top: 1px solid var(--line); }
 @media (max-width: 720px) {
   input, select, textarea { font-size: 16px; }
   .custom input, .custom input.amount { font-size: 16px; }
   .class-score .cs-custom input { font-size: 16px; }
+  /* 班级名单在手机上占满宽度，拖动手柄加大 */
+  #roster-modal { padding: 10px; }
+  .modal-box.roster-box { width: 100%; max-height: 94vh; padding: 14px 12px 10px; }
+  .stu-row { padding: 8px 6px; }
+  .stu-grip { font-size: 17px; padding: 8px 3px; }
+  .stu-more { width: 34px; height: 32px; font-size: 17px; }
+  .sm-row { flex-wrap: wrap; }
+  .sm-row input, .sm-row select { flex: 1 1 100%; }
+  .sm-row button { flex: 1 1 0; }
+  .roster-tools button { flex: 1 1 0; padding: 10px 8px; }
+  .rg-add { padding: 7px 10px; }
 }
