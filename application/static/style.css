@@ -548,13 +548,16 @@ html { -webkit-text-size-adjust: 100%; }
 .roster-empty { color: var(--muted); font-size: 14px; line-height: 1.8; padding: 16px 2px; }
 .roster-group { border: 1px solid var(--line); border-left: 5px solid var(--c, #cbd5e1); border-radius: 13px; background: #fff; }
 .roster-group.search-dim { opacity: .45; }
-.rg-head { display: flex; align-items: center; gap: 8px; padding: 9px 12px; background: #fbfcfe; border-radius: 12px 8px 0 0; border-bottom: 1px solid #f1f4f9; position: sticky; top: 0; z-index: 3; }
+.rg-head { display: flex; align-items: center; gap: 8px; padding: 9px 12px; background: #fbfcfe; border-radius: 12px 8px 0 0; border-bottom: 1px solid #f1f4f9; position: sticky; top: 0; z-index: 3; flex-wrap: wrap; }
 .rg-dot { width: 11px; height: 11px; border-radius: 50%; flex: none; background: var(--c, #cbd5e1); }
 .rg-name { font-weight: 700; font-size: 15px; }
 .rg-count { font-size: 11.5px; font-weight: 600; color: #4b5563; background: #eef1f7; border-radius: 999px; padding: 2px 9px; flex: none; }
 .rg-score { font-size: 11.5px; font-weight: 600; color: var(--brand-dark); background: #eef4ff; border-radius: 999px; padding: 2px 9px; flex: none; }
-.rg-add { margin-left: auto; font-size: 12.5px; font-weight: 600; color: var(--brand-dark); background: #fff; border: 1px solid #cfe0fb; border-radius: 9px; padding: 6px 12px; flex: none; }
+.rg-btns { margin-left: auto; display: flex; gap: 6px; flex: none; }
+.rg-add { font-size: 12.5px; font-weight: 600; color: var(--brand-dark); background: #fff; border: 1px solid #cfe0fb; border-radius: 9px; padding: 6px 12px; flex: none; white-space: nowrap; }
 .rg-add:hover { background: #eef4ff; }
+.rg-import { font-size: 12.5px; font-weight: 600; color: #4b5563; background: #fff; border: 1px solid var(--line); border-radius: 9px; padding: 6px 12px; flex: none; white-space: nowrap; }
+.rg-import:hover { background: #eef4ff; border-color: #cfe0fb; color: var(--brand-dark); }
 .rg-rows { display: flex; flex-direction: column; }
 .rg-none { color: var(--muted); font-size: 12.5px; padding: 10px 12px; }
 .stu-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; position: relative; border-top: 1px solid #f1f4f9; }
@@ -579,24 +582,97 @@ html { -webkit-text-size-adjust: 100%; }
 .sm-row input, .sm-row select { flex: 1; min-width: 0; padding: 8px 10px; font-size: 13.5px; border: 1px solid var(--line); border-radius: 10px; background: #fff; color: var(--text); outline: none; }
 .sm-row input:focus, .sm-row select:focus { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(59, 130, 246, .14); }
 .sm-row button { flex: none; padding: 8px 13px; font-size: 13px; }
-.roster-import { background: #f7f9fc; border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin: 4px 0 10px; }
-.roster-import textarea {
-  width: 100%;
-  min-height: 120px;
-  font-family: inherit;
-  font-size: 14px;
-  line-height: 1.6;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  padding: 9px 10px;
-  resize: vertical;
-  background: #fff;
-  color: var(--text);
-  outline: none;
-}
-.roster-import textarea:focus { border-color: var(--brand); }
-.ri-foot { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
-.ri-foot .hint { margin: 0; flex: 1 1 160px; }
+/* ---------------- 批量导入到小组 ---------------- */
+/* 打开导入面板时把「快速添加条」收起来，让注意力集中在这一件事上 */
+.roster-box.importing #roster-quick { display: none; }
+/* flex:none 很关键：不要被名单区挤扁；高度按内容长，长名单只滚面板中间，名单区留出约两百像素看上下文 */
+.roster-import-panel { margin: 10px 0 0; background: #fff; border: 1px solid #cfe0fb; border-radius: 13px; box-shadow: 0 6px 20px rgba(17, 24, 39, .10); overflow: hidden; display: flex; flex-direction: column; max-height: 52vh; flex: none; }
+.ri-head { display: flex; align-items: center; gap: 9px; padding: 10px 12px; background: linear-gradient(180deg, #f2f7ff, #eef4ff); border-bottom: 1px solid #dce8fb; flex-wrap: wrap; }
+.ri-bar { width: 4px; height: 18px; border-radius: 2px; background: var(--c, var(--brand)); flex: none; }
+.ri-title { font-size: 14.5px; font-weight: 700; }
+.ri-lock { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; background: #fff; border: 1px solid #cfe0fb; border-radius: 999px; padding: 4px 10px; font-size: 12px; font-weight: 600; color: #374151; }
+.ri-lock i { width: 9px; height: 9px; border-radius: 50%; background: var(--c, var(--brand)); flex: none; }
+.ri-lock button { color: var(--brand-dark); font-weight: 600; text-decoration: underline; font-size: 12px; }
+.ri-close { width: 30px; height: 30px; border-radius: 9px; color: #8b95a5; font-size: 15px; line-height: 1; flex: none; }
+.ri-close:hover { background: #eef1f7; color: var(--text); }
+.ri-steps { display: flex; gap: 6px; padding: 9px 12px 0; flex-wrap: wrap; }
+.ri-steps button { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); background: #f4f6fb; border-radius: 999px; padding: 5px 11px; }
+.ri-steps button i { font-style: normal; width: 16px; height: 16px; border-radius: 50%; background: #dbe2ec; color: #5b6472; font-size: 10.5px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.ri-steps button.on { background: var(--brand); color: #fff; font-weight: 600; }
+.ri-steps button.on i { background: rgba(255, 255, 255, .28); color: #fff; }
+.ri-steps button.done i { background: #e9f7f1; color: var(--up-dark); }
+/* 名单太长时只滚面板中间，步骤条和按钮始终看得到 */
+.ri-body { padding: 11px 12px 3px; flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.ri-foot { display: flex; align-items: center; gap: 8px; padding: 11px 12px 12px; flex-wrap: wrap; flex: none; border-top: 1px solid #f1f4f9; position: relative; }
+/* 内容被截断时给一条渐隐，看起来是「下面还有」而不是排版坏了 */
+.ri-foot::before { content: ''; position: absolute; left: 0; right: 0; top: -18px; height: 18px; background: linear-gradient(rgba(255, 255, 255, 0), #fff); pointer-events: none; }
+.ri-foot .ri-gap { margin-left: auto; }
+.ri-foot button { padding: 9px 14px; font-size: 13px; font-weight: 600; border-radius: 9px; }
+.ri-foot button:disabled { opacity: .55; cursor: not-allowed; }
+.ri-tip { margin: 9px 0 0; font-size: 11.5px; color: var(--muted); line-height: 1.6; }
+/* 第一步：选目标组 */
+.ri-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ri-chip { display: inline-flex; align-items: center; gap: 6px; background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; font-size: 12.5px; color: #4b5563; }
+.ri-chip i { width: 8px; height: 8px; border-radius: 50%; background: var(--c, #94a3b8); flex: none; }
+.ri-chip small { font-size: 11px; color: #9aa3b2; }
+.ri-chip.on { background: var(--c, var(--brand)); border-color: var(--c, var(--brand)); color: #fff; font-weight: 600; }
+.ri-chip.on small, .ri-chip.on b { color: rgba(255, 255, 255, .9); }
+/* 第二步：粘贴 + 实时解析 */
+.ri-paste { background: #f7f9fc; border: 1px solid var(--line); border-radius: 11px; padding: 10px; }
+.ri-ph { display: flex; align-items: baseline; gap: 8px; margin-bottom: 7px; flex-wrap: wrap; }
+.ri-ph b { font-size: 12.5px; color: #374151; }
+.ri-ph span { font-size: 11.5px; color: var(--muted); }
+.ri-paste textarea { width: 100%; min-height: 132px; font-family: inherit; font-size: 14px; line-height: 1.75; border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px; resize: vertical; background: #fff; color: var(--text); outline: none; }
+.ri-paste textarea:focus { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(59, 130, 246, .14); }
+.ri-tools { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.ri-tools button { padding: 7px 12px; font-size: 12.5px; border-radius: 8px; }
+.ri-parse { margin-top: 10px; background: #fff; border: 1px solid var(--line); border-radius: 11px; padding: 10px; }
+.ri-psum { font-size: 13px; font-weight: 600; }
+.ri-psum b { font-variant-numeric: tabular-nums; }
+.ri-psum b.ok { color: var(--up-dark); }
+.ri-psum b.warn { color: #b45309; }
+.ri-names { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.ri-nm { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; border-radius: 999px; padding: 4px 10px; border: 1px solid transparent; }
+.ri-nm small { font-size: 10.5px; font-weight: 600; }
+.ri-nm.new { background: #eef4ff; border-color: #cfe0fb; color: var(--brand-dark); font-weight: 600; }
+.ri-nm.other, .ri-nm.same { background: #fff6e7; border-color: #f7dcae; color: #b45309; }
+.ri-nm.dup { background: #f4f6fb; border-color: var(--line); color: #9aa3b2; text-decoration: line-through; }
+.ri-nm.empty { background: #f4f6fb; border-color: var(--line); color: #9aa3b2; }
+.ri-rule { display: flex; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+.ri-rule > span { font-size: 12.5px; color: var(--muted); }
+.ri-seg { display: flex; gap: 4px; background: #eef1f7; border-radius: 10px; padding: 3px; flex: 1 1 200px; }
+.ri-seg button { flex: 1 1 90px; padding: 7px 10px; border-radius: 8px; font-size: 12.5px; color: #4b5563; }
+.ri-seg button.on { background: #fff; color: var(--brand-dark); font-weight: 600; box-shadow: 0 1px 3px rgba(17, 24, 39, .12); }
+/* 第三步：确认 */
+.ri-confirm { display: flex; align-items: center; gap: 8px; font-size: 13.5px; flex-wrap: wrap; }
+.ri-confirm b { color: var(--brand-dark); }
+.ri-gtag { display: inline-flex; align-items: center; gap: 6px; background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; font-size: 12.5px; font-weight: 600; }
+.ri-gtag i { width: 8px; height: 8px; border-radius: 50%; background: var(--c, var(--brand)); flex: none; }
+.ri-delta { margin-left: auto; font-size: 12px; color: var(--muted); font-weight: 600; font-variant-numeric: tabular-nums; }
+/* 确认页名单太长时只滚这份名单，上面的结论和下面的按钮/提示始终看得到 */
+.ri-preview { margin-top: 10px; border: 1px solid var(--line); border-radius: 11px; max-height: 208px; overflow-y: auto; overflow-x: hidden; }
+/* 滚动条做得明显一点：看到条就知道下面还有内容 */
+.ri-body::-webkit-scrollbar, .ri-preview::-webkit-scrollbar { width: 9px; }
+.ri-body::-webkit-scrollbar-track, .ri-preview::-webkit-scrollbar-track { background: #f4f6fb; }
+.ri-body::-webkit-scrollbar-thumb, .ri-preview::-webkit-scrollbar-thumb { background: #c3d0e2; border-radius: 9px; border: 2px solid #f4f6fb; }
+.ri-body::-webkit-scrollbar-thumb:hover, .ri-preview::-webkit-scrollbar-thumb:hover { background: #9fb3cd; }
+.ri-body, .ri-preview { scrollbar-width: thin; scrollbar-color: #c3d0e2 #f4f6fb; }
+.ri-plabel { background: #f7f9fc; padding: 7px 11px; font-size: 11.5px; font-weight: 700; color: #4b5563; border-top: 1px solid var(--line); }
+.ri-plabel:first-child { border-top: 0; }
+.ri-prow { display: flex; align-items: center; gap: 9px; padding: 7px 11px; border-top: 1px solid #f1f4f9; font-size: 13.5px; }
+.ri-pav { width: 26px; height: 26px; border-radius: 50%; background: var(--c, var(--brand)); color: #fff; font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.ri-pname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ri-prow.skip { color: #9aa3b2; }
+.ri-prow.skip .ri-pname { text-decoration: line-through; }
+.ri-pnote { margin-left: auto; font-size: 11.5px; color: #b45309; text-align: right; }
+.ri-prow.skip .ri-pnote { color: #9aa3b2; }
+.ri-more { padding: 7px 11px; border-top: 1px solid #f1f4f9; font-size: 11.5px; color: var(--muted); background: #fcfdff; }
+/* 第四步：导入完成 */
+.ri-done { display: flex; align-items: center; gap: 9px; background: #e9f7f1; border: 1px solid #c3e9d8; border-radius: 11px; padding: 10px 12px; font-size: 13.5px; font-weight: 600; color: #0f5132; flex-wrap: wrap; }
+.ri-done button { margin-left: auto; background: #fff; border: 1px solid #c3e9d8; color: var(--up-dark); border-radius: 8px; padding: 6px 11px; font-size: 12.5px; font-weight: 600; }
+/* 刚导入进来的学生在名单里闪一下，方便当场对照 */
+@keyframes stuFlash { from { background: #dbeafe; } to { background: transparent; } }
+.stu-row.flash { animation: stuFlash 3s ease-out 1; }
 .roster-foot { color: var(--muted); font-size: 12px; margin: 8px 0 0; padding-top: 10px; border-top: 1px solid var(--line); }
 @media (max-width: 720px) {
   input, select, textarea { font-size: 16px; }
@@ -617,4 +693,30 @@ html { -webkit-text-size-adjust: 100%; }
   .stu-menu { left: 8px; right: 8px; width: auto; }
   .rg-head { padding: 10px 10px; }
   .rg-add { padding: 7px 10px; }
+  /* 小组卡片上的两个按钮在手机上整行摊开，别挤成一团 */
+  .rg-btns { flex: 1 1 100%; margin-left: 0; }
+  .rg-btns button { flex: 1 1 0; padding: 8px 10px; }
+  /* 导入面板：手机上按钮摊平，点着更稳 */
+  .ri-head { padding: 9px 10px; }
+  /* 手机上标题和 ✕ 占第一行，组名胶囊整行掉到第二行，不会把 ✕ 挤到左边单独一行 */
+  .ri-title { order: 1; flex: 1 1 auto; }
+  .ri-close { order: 2; }
+  .ri-lock { order: 3; flex: 0 1 auto; margin-left: 0; }
+  .ri-body { padding: 10px 10px 3px; }
+  .ri-foot { padding: 10px 10px 11px; }
+  .ri-foot button { flex: 1 1 0; padding: 11px 10px; }
+  .ri-foot .ri-gap { display: none; }
+  .ri-close { width: 34px; height: 34px; }
+  /* 手机上导入面板独占弹窗剩下的高度：下面的名单先让位，不然两边都只挤出一条 */
+  .roster-box.importing .roster-main,
+  .roster-box.importing .roster-foot { display: none; }
+  .roster-import-panel { flex: 1 1 auto; max-height: none; }
+  .ri-preview { max-height: 150px; }
+  .ri-tools button { flex: 1 1 0; padding: 9px 10px; }
+  .ri-chip { padding: 8px 12px; }
+  /* 手机上把粘贴框收矮一点、提示行收紧，让「同名规则」那一行也能落在首屏里 */
+  .ri-paste textarea { font-size: 16px; min-height: 104px; }
+  .ri-ph { margin-bottom: 5px; }
+  .ri-ph span { font-size: 11px; line-height: 1.5; }
+  .ri-steps { padding: 7px 10px 0; }
 }

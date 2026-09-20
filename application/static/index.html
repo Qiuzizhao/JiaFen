@@ -8,7 +8,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png?v=20260915">
   <link rel="icon" href="/favicon.ico?v=20260915" sizes="any">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=20260915">
-  <link rel="stylesheet" href="/style.css?v=20260919b">
+  <link rel="stylesheet" href="/style.css?v=20260920">
 </head>
 <body>
 
@@ -158,6 +158,13 @@
         </div>
       </div>
       <p id="roster-msg" class="hint"></p>
+      <!-- 批量导入面板：小组卡片上的「批量导入」和顶部的「批量导入」都进这里 -->
+      <div id="roster-import" class="roster-import-panel hidden" role="dialog" aria-label="批量导入到小组">
+        <div class="ri-head" id="ri-head"></div>
+        <div class="ri-steps" id="ri-steps" role="group" aria-label="导入步骤"></div>
+        <div class="ri-body" id="ri-body"></div>
+        <div class="ri-foot" id="ri-foot"></div>
+      </div>
       <div class="roster-main">
         <nav id="roster-nav" class="roster-nav" aria-label="快速跳转"></nav>
         <div id="roster-body" class="roster-body"></div>
@@ -199,6 +206,6 @@
     <div id="projector-board" class="projector-board"></div>
   </div>
 
-  <script src="/app.js?v=20260919b"></script>
+  <script src="/app.js?v=20260920"></script>
 </body>
 </html>

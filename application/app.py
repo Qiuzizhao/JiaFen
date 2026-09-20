@@ -663,7 +663,8 @@ GROUP_PALETTE = [
     "#06b6d4", "#ec4899", "#84cc16", "#f97316", "#14b8a6",
 ]
 # 名单里一行可能写成「第1组,张三」：这些分隔符都当成组分隔
-STUDENT_SEP = re.compile(r"[,，、\t]+")
+# 名字之间的分隔：换行由调用方先切开，这里管逗号、顿号、分号、斜杠、空格
+IMPORT_SEP = re.compile(r"[,，、;；/\s]+")
 
 
 def _own_student(sid):
@@ -738,40 +739,49 @@ def create_student(cid):
 @app.route("/api/classes/<int:cid>/students/import", methods=["POST"])
 @login_required
 def import_students(cid):
-    """批量粘贴导入。
+    """批量粘贴导入到小组。
 
-    一行一个学生；写成「第1组,张三」就直接分到该组，组不存在会自动建一个。
-    只写姓名时进未分组（若传了 default_group_id 则进那个组）。
+    一行可以写好几个名字：换行、逗号、顿号、分号、斜杠、空格都算分隔。
+    行首是已知组名、或以「组」结尾时，这一行剩下的名字落到那个组（组不存在会自动新建）。
+    其余名字落到 default_group_id（不传＝未分组）。
+    dedupe=skip 时，目标组里已经有同名的人会被跳过；默认不跳过。
     """
     data = request.get_json(silent=True) or {}
     text = data.get("text") or ""
     if not own_class(cid):
         return jsonify({"error": "班级不存在"}), 404
+    dedupe = "skip" if (data.get("dedupe") or "") == "skip" else "allow"
     db = get_db()
     rows = db.execute(
         "SELECT id, name FROM groups WHERE class_id=? ORDER BY sort_order ASC, id", (cid,)
     ).fetchall()
     by_name = {r["name"].strip(): r["id"] for r in rows}
+    # 每个小组现有的姓名（含这次导入刚加进去的），用来判断同名
+    in_group = {}
+    for r in db.execute("SELECT group_id, name FROM students WHERE class_id=?", (cid,)).fetchall():
+        in_group.setdefault(r["group_id"], set()).add((r["name"] or "").strip())
     group_count = len(rows)
     default_gid = _group_in_class(db, cid, data.get("default_group_id"))
     order = _next_student_order(db, cid)
     added = 0
+    skipped = 0
+    ids = []
+    per_group = {}
     created_groups = []
     for raw in text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
         line = raw.strip()
         if not line:
             continue
-        parts = [p.strip() for p in STUDENT_SEP.split(line) if p.strip()]
+        parts = [p.strip() for p in IMPORT_SEP.split(line) if p.strip()]
+        if not parts:
+            continue
         gid = default_gid
-        # 「第1组 张三」这种用空格分的：只有第一段是已知组名或以「组」结尾才当组名
-        if len(parts) == 1 and " " in parts[0]:
-            head, rest = parts[0].split(" ", 1)
-            if rest.strip() and (head in by_name or head.endswith("组")):
-                parts = [head] + [x for x in rest.split(" ") if x.strip()]
         names = parts
-        if len(parts) >= 2:
-            gname, names = parts[0][:20], parts[1:]
-            gid = by_name.get(gname)
+        head = parts[0]
+        # 行首是已知组名、或以「组」结尾时，这一行剩下的名字落到那个组
+        if len(parts) >= 2 and (head in by_name or head.endswith("组")):
+            gname, names = head[:20], parts[1:]
+            gid = by_name.get(head)
             if gid is None:
                 cur = db.execute(
                     "INSERT INTO groups(class_id, name, color, sort_order) VALUES(?,?,?,"
@@ -779,19 +789,25 @@ def import_students(cid):
                     (cid, gname, GROUP_PALETTE[group_count % len(GROUP_PALETTE)], cid),
                 )
                 gid = cur.lastrowid
-                by_name[gname] = gid
+                by_name[head] = gid
                 group_count += 1
                 created_groups.append(gname)
         for nm in names:
-            nm = nm.strip()
+            nm = nm.strip()[:20]
             if not nm:
                 continue
-            db.execute(
+            if dedupe == "skip" and nm in in_group.get(gid, ()):
+                skipped += 1
+                continue
+            cur = db.execute(
                 "INSERT INTO students(class_id, group_id, name, sort_order) VALUES(?,?,?,?)",
-                (cid, gid, nm[:20], order),
+                (cid, gid, nm, order),
             )
             order += 1
             added += 1
+            ids.append(cur.lastrowid)
+            in_group.setdefault(gid, set()).add(nm)
+            per_group[gid] = per_group.get(gid, 0) + 1
     db.commit()
     if added:
         # 导入时可能顺手建了新小组，别的设备要整页对账才能看到新组
@@ -801,7 +817,18 @@ def import_students(cid):
             "client": (data.get("client") or "")[:32],
             "groups_changed": bool(created_groups),
         })
-    return jsonify({"ok": True, "added": added, "groups_created": created_groups})
+    id_to_name = {gidv: nm for nm, gidv in by_name.items()}
+    return jsonify({
+        "ok": True,
+        "added": added,
+        "skipped": skipped,
+        "ids": ids,
+        "groups": [
+            {"id": gidv, "name": id_to_name.get(gidv, "未分组"), "added": n}
+            for gidv, n in per_group.items()
+        ],
+        "groups_created": created_groups,
+    })
 
 
 @app.route("/api/classes/<int:cid>/students/reorder", methods=["POST"])
@@ -867,6 +894,35 @@ def delete_student(sid):
     db.commit()
     broadcast({"kind": "roster", "class_id": cls["id"], "client": (data.get("client") or "")[:32]})
     return jsonify({"ok": True})
+
+
+@app.route("/api/students/batch-delete", methods=["POST"])
+@login_required
+def delete_students():
+    """一次删掉一批学生：批量导入完「撤销本次导入」用"""
+    data = request.get_json(silent=True) or {}
+    ids = []
+    for x in (data.get("ids") or [])[:500]:
+        try:
+            ids.append(int(x))
+        except (TypeError, ValueError):
+            continue
+    if not ids:
+        return jsonify({"error": "没有要删除的学生"}), 400
+    db = get_db()
+    cids = set()
+    removed = 0
+    for sid in ids:
+        cls = _own_student(sid)
+        if not cls:
+            continue
+        cids.add(cls["id"])
+        db.execute("DELETE FROM students WHERE id=?", (sid,))
+        removed += 1
+    db.commit()
+    for cid in cids:
+        broadcast({"kind": "roster", "class_id": cid, "client": (data.get("client") or "")[:32]})
+    return jsonify({"ok": True, "removed": removed})
 
 
 # ---------------------------------------------------------------------------# 记分、撤销、历史

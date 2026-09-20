@@ -19,7 +19,8 @@ const state = {
   rosterMenu: null,
   rosterAddGid: '',
   rosterAdded: [],     // 本次连续添加的学生 id（栈顶＝撤销上一个）
-  rosterImport: false,
+  rosterImport: null,        // 批量导入面板的状态：见 rosterImportOpen()
+  rosterImportSig: '',       // 面板指纹，没变就不重画（免得打字时输入框被重建）
   rosterMsg: '',
   rosterSig: '',       // 上次渲染的名单指纹，名单没变就不重画
 };
@@ -1065,7 +1066,8 @@ function openRoster() {
   if (!cls) { alert('请先选择班级'); return; }
   state.rosterOpen = true;
   state.rosterMenu = null;
-  state.rosterImport = false;
+  state.rosterImport = null;
+  state.rosterImportSig = '';
   state.rosterAdded = [];
   state.rosterMsg = '';
   state.rosterAddGid = cls.groups.length ? String(cls.groups[0].id) : '';
@@ -1077,12 +1079,20 @@ function openRoster() {
 function closeRoster() {
   state.rosterOpen = false;
   state.rosterMenu = null;
-  state.rosterImport = false;
+  state.rosterImport = null;
+  state.rosterImportSig = '';
   state.rosterAdded = [];
   state.rosterSig = '';
   closeRowMenus();
+  hideImportPanel();
   $('#roster-modal').classList.add('hidden');
   renderSidebar();   // 名单人数变了，左边班级列表的「N人」跟着更新
+}
+function hideImportPanel() {
+  const panel = $('#roster-import');
+  if (panel) panel.classList.add('hidden');
+  const box = document.querySelector('#roster-modal .roster-box');
+  if (box) box.classList.remove('importing');
 }
 function rosterMsg(text) {
   state.rosterMsg = text || '';
@@ -1155,7 +1165,10 @@ function rosterGroupHTML(cls, gid) {
         <span class="rg-name">${esc(g ? g.name : '未分组')}</span>
         <span class="rg-count">${list.length}人</span>
         ${score == null ? '<span class="rg-score">拖进来就是没分组</span>' : `<span class="rg-score">小组分 ${score}</span>`}
-        <button class="rg-add" data-gid="${esc(want)}">＋ 加学生</button>
+        <span class="rg-btns">
+          <button class="rg-add" data-gid="${esc(want)}">＋ 加学生</button>
+          <button class="rg-import" data-gid="${esc(want)}" title="把一份名单批量粘进这一组">⇩ 批量导入</button>
+        </span>
       </div>
       <div class="rg-rows">${rows || `<div class="rg-none">${empty}</div>`}</div>
     </section>`;
@@ -1347,16 +1360,265 @@ function closeRowMenus() {
   state.rosterMenu = null;
 }
 
-function rosterImportHTML() {
-  return `
-    <div class="roster-import">
-      <textarea id="roster-import-text" placeholder="一行一个学生，例如：&#10;张三&#10;李四&#10;王五&#10;&#10;也可以直接写成「第1组,张三」，就会分到第1组（组不存在会自动新建）"></textarea>
-      <div class="ri-foot">
-        <p class="hint">换行、逗号、顿号都能当分隔；Excel 里复制一列名字直接粘进来就行。</p>
-        <button class="ghost" onclick="rosterImportCancel()">取消</button>
-        <button class="primary" onclick="rosterImportSubmit()">导入</button>
-      </div>
+// ---------------- 批量导入到小组 ----------------
+// 两个入口都进同一个面板：小组卡片上的「⇩ 批量导入」（目标组已锁定）、顶部的「批量导入」（自己选组）
+// 四步：选目标组 → 粘贴名单（实时解析）→ 确认 → 完成（可一键撤销）
+const IMPORT_SEP = /[,，、;；/\s]+/;
+const NEW_GROUP_COLOR = '#8b5cf6';
+
+// 解析粘贴的内容：谁落到哪一组、会不会撞上已有的同名（规则和服务器一致）
+function importParseItems(cls, text, gid, dedupe) {
+  const want = (gid == null || gid === '') ? '' : String(gid);
+  const byName = new Map();
+  (cls.groups || []).forEach(g => { if (!byName.has(g.name)) byName.set(g.name, String(g.id)); });
+  const inGroup = new Map();
+  const remember = (g, name) => {
+    if (!inGroup.has(g)) inGroup.set(g, new Set());
+    inGroup.get(g).add(name);
+  };
+  rosterStudents(cls).forEach(s => remember(studentGroupId(s), s.name));
+  const out = [];
+  String(text || '').replace(/\r/g, '').split('\n').forEach(line => {
+    const parts = line.trim().split(IMPORT_SEP).map(x => x.trim()).filter(Boolean);
+    if (!parts.length) return;
+    let target = want;
+    let names = parts;
+    let fresh = '';
+    const head = parts[0];
+    // 行首是已知组名、或以「组」结尾时，这一行剩下的名字落到那个组
+    if (parts.length >= 2 && (byName.has(head) || /组$/.test(head))) {
+      names = parts.slice(1);
+      if (byName.has(head)) {
+        target = byName.get(head);
+      } else {
+        fresh = head.slice(0, 20);
+        target = 'new:' + fresh;
+      }
+    }
+    names.forEach(raw => {
+      const nm = raw.slice(0, 20);
+      if (!nm) return;
+      const seen = inGroup.get(target);
+      let kind = 'new';
+      let note = '';
+      if (seen && seen.has(nm)) {
+        kind = dedupe === 'skip' ? 'dup' : 'same';
+        note = dedupe === 'skip' ? '本组已有，跳过' : '本组已有，再进一个';
+      } else {
+        let other = '';
+        inGroup.forEach((names2, g) => { if (!other && g !== target && names2.has(nm)) other = g; });
+        if (other) { kind = 'other'; note = quickGroupName(cls, other) + '也有同名'; }
+      }
+      const take = kind !== 'dup';
+      if (take) remember(target, nm);
+      out.push({
+        name: nm,
+        gid: target,
+        group: fresh || quickGroupName(cls, target),
+        color: fresh ? NEW_GROUP_COLOR : groupColor(cls, target),
+        kind: kind,
+        note: note,
+        take: take,
+      });
+    });
+  });
+  return out;
+}
+function importItems() {
+  const cls = getCurrentClass();
+  const ri = state.rosterImport;
+  if (!cls || !ri) return [];
+  return importParseItems(cls, ri.text, ri.gid, ri.dedupe);
+}
+function importTake(items) { return (items || []).filter(x => x.take); }
+
+function importGroupChipsHTML(cls) {
+  const ri = state.rosterImport;
+  const want = String(ri.gid == null ? '' : ri.gid);
+  return rosterGroupItems(cls).map(it =>
+    `<button type="button" class="ri-chip${it.gid === want ? ' on' : ''}" data-rig="${esc(it.gid)}" style="--c:${esc(it.color)}">`
+    + `<i></i>${esc(it.name)}<small>${studentsOfGroup(cls, it.gid).length}人</small>`
+    + (it.gid === want ? '<b>✓</b>' : '')
+    + '</button>'
+  ).join('');
+}
+
+function importParseHTML(items) {
+  const n = importTake(items).length;
+  const names = items.length
+    ? items.map(it => `<span class="ri-nm ${it.kind}">${esc(it.name)}${it.note ? `<small>${esc(it.note)}</small>` : ''}</span>`).join('')
+    : '<span class="ri-nm empty">还没有内容</span>';
+  return `<div class="ri-parse" id="ri-parse">
+      <div class="ri-psum" aria-live="polite">识别 <b>${items.length}</b> 个姓名 · 将导入 <b class="ok">${n}</b> 人 · 跳过 <b class="warn">${items.length - n}</b> 人</div>
+      <div class="ri-names">${names}</div>
     </div>`;
+}
+
+// 按「落到哪一组」把要导入的人分组，确认页就按这个分区显示
+function importSections(take) {
+  const order = [];
+  const map = new Map();
+  take.forEach(it => {
+    if (!map.has(it.gid)) { map.set(it.gid, { gid: it.gid, name: it.group, color: it.color, list: [] }); order.push(it.gid); }
+    map.get(it.gid).list.push(it);
+  });
+  return order.map(k => map.get(k));
+}
+
+function importPreviewHTML(list, skip) {
+  const shown = list.slice(0, 8);
+  const rows = shown.map(it => {
+    const note = skip ? '本组已有同名，跳过' : (it.kind === 'other' ? it.note : '加入 ' + it.group);
+    return `<div class="ri-prow${skip ? ' skip' : ''}">`
+      + `<span class="ri-pav" style="--c:${esc(skip ? '#cbd5e1' : it.color)}">${esc(stuInitial(it.name))}</span>`
+      + `<span class="ri-pname">${esc(it.name)}</span>`
+      + `<span class="ri-pnote">${esc(note)}</span>`
+      + '</div>';
+  }).join('');
+  const more = list.length > shown.length
+    ? `<div class="ri-more">还有 ${list.length - shown.length} 人，共 ${list.length} 人</div>` : '';
+  return rows + more;
+}
+
+function importHeadHTML(cls, ri) {
+  const color = ri.gid === '' ? '#cbd5e1' : groupColor(cls, ri.gid);
+  return `<span class="ri-bar" style="--c:${esc(color)}"></span>`
+    + '<span class="ri-title">批量导入到小组</span>'
+    + `<span class="ri-lock" style="--c:${esc(color)}"><i></i>${esc(quickGroupName(cls, ri.gid))} · 现有 ${studentsOfGroup(cls, ri.gid).length} 人`
+    + '<button type="button" data-rigo="step1">换组</button></span>'
+    + '<button type="button" class="ri-close" id="ri-close-btn" aria-label="关闭导入面板">✕</button>';
+}
+
+function importStepsHTML(ri) {
+  return ['目标组', '粘贴名单', '确认', '完成'].map((label, i) => {
+    const k = i + 1;
+    const cls = [(k === ri.step ? 'on' : ''), (k < ri.step ? 'done' : '')].join(' ').trim();
+    return `<button type="button" class="${cls}" data-rigo="step${k}"${k === ri.step ? ' aria-current="step"' : ''}>`
+      + `<i>${k < ri.step ? '✓' : k}</i>${label}</button>`;
+  }).join('');
+}
+
+function importStepHTML(cls, ri, items) {
+  const take = importTake(items);
+  const skip = items.filter(x => !x.take);
+  const gname = quickGroupName(cls, ri.gid);
+
+  if (ri.step === 1) {
+    return `<div class="ri-chips" role="group" aria-label="目标小组">${importGroupChipsHTML(cls)}</div>`
+      + `<p class="ri-tip">${ri.locked ? '从小组卡片进来时目标已经选好，这里只是换组。' : '先点一个小组，粘进来的名字就落到它下面；名单里写了组名的行，按行里的组走。'}</p>`;
+  }
+
+  if (ri.step === 2) {
+    return `<div class="ri-paste">
+        <div class="ri-ph"><b>粘贴名单</b><span>一行一个；Excel 里复制一列直接粘，逗号、顿号、分号、空格都当分隔</span></div>
+        <textarea id="ri-text" placeholder="张明轩&#10;李文博&#10;王雨欣，陈嘉禾&#10;第3组,宋佳琪" autocomplete="off" spellcheck="false"></textarea>
+        <div class="ri-tools">
+          <button type="button" class="ghost" id="ri-paste-btn">从剪贴板粘贴</button>
+          <button type="button" class="ghost" id="ri-clear-btn">清空</button>
+        </div>
+      </div>
+      ${importParseHTML(items)}
+      <div class="ri-rule">
+        <span>「${esc(gname)}」已经有同名</span>
+        <div class="ri-seg">
+          <button type="button" data-ridedupe="skip" class="${ri.dedupe === 'skip' ? 'on' : ''}">自动跳过</button>
+          <button type="button" data-ridedupe="allow" class="${ri.dedupe === 'allow' ? 'on' : ''}">仍然导入</button>
+        </div>
+      </div>`;
+  }
+
+  if (ri.step === 3) {
+    const sections = importSections(take);
+    const body = sections.map(sec => {
+      const isNew = sec.gid.indexOf('new:') === 0;
+      const label = isNew
+        ? `${sec.name} · 新增 ${sec.list.length} 人（会自动建这个小组）`
+        : `${sec.name} · 新增 ${sec.list.length} 人（现有 ${studentsOfGroup(cls, sec.gid).length} 人）`;
+      return `<div class="ri-plabel">${esc(label)}</div>${importPreviewHTML(sec.list, false)}`;
+    }).join('');
+    const skipBlock = skip.length
+      ? `<div class="ri-plabel">跳过 ${skip.length} 人，不进名单</div>${importPreviewHTML(skip, true)}`
+      : '';
+    const tags = sections.map(sec => `<span class="ri-gtag" style="--c:${esc(sec.color)}"><i></i>${esc(sec.name)} +${sec.list.length}</span>`).join('');
+    const mine = take.filter(x => x.gid === ri.gid).length;
+    const before = studentsOfGroup(cls, ri.gid).length;
+    const extra = take.length - mine;
+    return `<div class="ri-confirm">把 <b>${take.length}</b> 名学生导入到名单${extra ? `，其中 ${extra} 人按行里的组名落组` : ''}${tags}`
+      + `<span class="ri-delta">${esc(gname)} ${before}人 → ${before + mine}人</span></div>`
+      + `<div class="ri-preview">${body}${skipBlock}</div>`
+      + '<p class="ri-tip">只影响上面列出的组，其他小组和学生分数都不动。</p>';
+  }
+
+  const round = ri.round || { added: 0, skipped: 0, groups: [] };
+  const gl = round.groups || [];
+  const head = gl.length === 1
+    ? `已把 ${round.added} 名学生加到 ${esc(gl[0].name)}`
+    : `已导入 ${round.added} 名学生：${gl.map(g => `${esc(g.name)} ${g.added}人`).join('、')}`;
+  return `<div class="ri-done" role="status"><span>${head}</span>`
+    + '<button type="button" id="ri-undo-btn">撤销本次导入</button></div>'
+    + '<p class="ri-tip">新加进来的学生在名单里会蓝色高亮几秒，方便当场对照。</p>'
+    + (round.skipped ? `<p class="ri-tip">还有 ${round.skipped} 人按规则跳过：目标组里已经有同名。</p>` : '');
+}
+
+function importFootHTML(cls, ri, items) {
+  const n = importTake(items).length;
+  if (ri.step === 1) {
+    return '<button type="button" class="ghost" data-rigo="close">取消</button><span class="ri-gap"></span>'
+      + '<button type="button" class="primary" data-rigo="next">下一步：粘贴名单</button>';
+  }
+  if (ri.step === 2) {
+    return '<button type="button" class="ghost" data-rigo="back">上一步</button><span class="ri-gap"></span>'
+      + `<button type="button" class="primary" id="ri-submit" data-rigo="next"${n ? '' : ' disabled'}>下一步：确认 ${n} 人</button>`;
+  }
+  if (ri.step === 3) {
+    return '<button type="button" class="ghost" data-rigo="back">返回修改</button><span class="ri-gap"></span>'
+      + `<button type="button" class="primary" id="ri-submit" data-rigo="submit">确认导入 ${n} 人</button>`;
+  }
+  return '<button type="button" class="ghost" data-rigo="again">再导入一批</button><span class="ri-gap"></span>'
+    + '<button type="button" class="primary" data-rigo="close">完成</button>';
+}
+
+function renderImportPanel(focusText) {
+  const panel = $('#roster-import');
+  if (!panel) return;
+  const cls = getCurrentClass();
+  const ri = state.rosterImport;
+  if (!cls || !ri) { hideImportPanel(); state.rosterImportSig = ''; return; }
+  panel.classList.remove('hidden');
+  const box = document.querySelector('#roster-modal .roster-box');
+  if (box) box.classList.add('importing');
+  const roundKey = ri.round ? `${ri.round.added}:${(ri.round.ids || []).length}` : '';
+  const sig = [ri.step, ri.gid, ri.locked ? 1 : 0, ri.dedupe, roundKey, rosterSig(cls)].join('|');
+  if (sig === state.rosterImportSig) { refreshImportParse(); return; }
+  state.rosterImportSig = sig;
+  const items = importItems();
+  $('#ri-head').innerHTML = importHeadHTML(cls, ri);
+  $('#ri-steps').innerHTML = importStepsHTML(ri);
+  $('#ri-body').innerHTML = importStepHTML(cls, ri, items);
+  $('#ri-foot').innerHTML = importFootHTML(cls, ri, items);
+  const ta = $('#ri-text');
+  if (ta) ta.value = ri.text;
+  if (focusText && ta) { ta.focus(); if (!isTouchDevice()) ta.select(); }
+}
+
+// 只刷新「解析结果 + 底部按钮」：输入框和光标留在原地，打字不会卡
+function refreshImportParse() {
+  const cls = getCurrentClass();
+  const ri = state.rosterImport;
+  if (!cls || !ri) return;
+  const items = importItems();
+  const parse = $('#ri-parse');
+  if (parse && ri.step === 2) parse.outerHTML = importParseHTML(items);
+  const foot = $('#ri-foot');
+  if (foot) foot.innerHTML = importFootHTML(cls, ri, items);
+}
+
+// 刚导入进来的学生在名单里闪一下蓝底
+function flashStudents(ids) {
+  const rows = (ids || []).map(sid => stuRowEl(sid)).filter(Boolean);
+  if (!rows.length) return;
+  rows.forEach(r => r.classList.add('flash'));
+  setTimeout(() => rows.forEach(r => r.classList.remove('flash')), 3200);
 }
 
 function renderRoster() {
@@ -1372,7 +1634,6 @@ function renderRoster() {
   }
 
   let html = '';
-  if (state.rosterImport) html += rosterImportHTML();
   if (!cls.groups.length && !all.length) {
     html += '<div class="roster-empty">这个班还没有小组，也还没有学生。<br>先在记分板上「＋ 添加小组」建好小组，再点上面的「批量导入」，把班级名单一行一个粘进来。</div>';
   } else {
@@ -1388,7 +1649,7 @@ function renderRoster() {
   renderUndoBtn();
   applyRosterSearch();
   state.rosterSig = rosterSig(cls);
-  if (state.rosterImport) { const ta = $('#roster-import-text'); if (ta) ta.focus(); }
+  renderImportPanel();
 }
 
 // 一个名字框里可以用空格 / 逗号一次敲好几个人
@@ -1530,36 +1791,156 @@ async function rosterDelete(sid) {
   } catch (e) { alert(e.message); }
 }
 
-function rosterImportOpen() {
-  state.rosterImport = true;
-  closeRowMenus();
-  renderRoster();
-  const ta = $('#roster-import-text');
-  if (ta) ta.focus();
-}
-function rosterImportCancel() {
-  state.rosterImport = false;
-  renderRoster();
-}
-async function rosterImportSubmit() {
+// 打开面板：从小组卡片进来（locked）时目标组已经定好，直接从「粘贴名单」开始
+function rosterImportOpen(gid, locked) {
   const cls = getCurrentClass();
   if (!cls) return;
-  const ta = $('#roster-import-text');
-  const text = ((ta && ta.value) || '').trim();
-  if (!text) { if (ta) ta.focus(); return; }
+  const want = (gid == null || gid === '') ? '' : String(gid);
+  const last = localStorage.getItem('jiafen.importGid');
+  const fallback = cls.groups.length ? String(cls.groups[0].id) : '';
+  state.rosterImport = {
+    step: locked ? 2 : 1,
+    gid: locked ? want : (last == null ? fallback : last),
+    locked: !!locked,
+    dedupe: localStorage.getItem('jiafen.importDedupe') === 'allow' ? 'allow' : 'skip',
+    text: '',
+    round: null,
+  };
+  state.rosterImportSig = '';
+  closeRowMenus();
+  renderImportPanel(true);
+}
+
+function rosterImportClose() {
+  state.rosterImport = null;
+  state.rosterImportSig = '';
+  hideImportPanel();
+  rosterMsg('');
+}
+
+function importSetStep(n) {
+  const ri = state.rosterImport;
+  if (!ri) return;
+  let to = Math.max(1, Math.min(4, n));
+  if (to >= 3 && !importTake(importItems()).length) to = 2;
+  ri.step = to;
+  renderImportPanel(to === 2);
+}
+
+// 从剪贴板直接粘（手机上没有键盘，长按选择太麻烦）
+async function rosterImportPaste() {
+  const ri = state.rosterImport;
+  if (!ri) return;
+  const ta = $('#ri-text');
+  try {
+    const text = await navigator.clipboard.readText();
+    if (!text || !text.trim()) throw new Error('empty');
+    ri.text = text;
+    if (ta) ta.value = text;
+    refreshImportParse();
+    rosterMsg(`已粘进来 ${importItems().length} 个姓名`);
+  } catch (e) {
+    if (ta) ta.focus();
+    rosterMsg('浏览器不让直接读剪贴板：点一下输入框，长按选「粘贴」也一样');
+  }
+}
+
+async function rosterImportSubmit() {
+  const cls = getCurrentClass();
+  const ri = state.rosterImport;
+  if (!cls || !ri) return;
+  if (!importTake(importItems()).length) {
+    rosterMsg('还没有可以导入的姓名');
+    const ta = $('#ri-text'); if (ta) ta.focus();
+    return;
+  }
+  const btn = $('#ri-submit');
+  if (btn) btn.disabled = true;
   try {
     const res = await api(`/api/classes/${cls.id}/students/import`, {
       method: 'POST',
-      body: { text, client: CLIENT_ID },
+      body: {
+        text: ri.text,
+        default_group_id: ri.gid || null,
+        dedupe: ri.dedupe,
+        client: CLIENT_ID,
+      },
     });
-    state.rosterImport = false;
-    let msg = `已导入 ${res.added} 名学生`;
-    if (res.groups_created && res.groups_created.length) {
-      msg += `，并新建了小组：${res.groups_created.join('、')}`;
-    }
+    localStorage.setItem('jiafen.importGid', ri.gid);
+    localStorage.setItem('jiafen.importDedupe', ri.dedupe);
+    ri.round = res;
+    ri.step = 4;
+    state.rosterImportSig = '';
+    await refresh();          // 名单变了：拉一次最新的，也让「现有 N 人」跟上
+    renderImportPanel();
+    flashStudents(res.ids || []);
+    let msg = `已导入 ${res.added} 人`;
+    if (res.skipped) msg += `，跳过重复 ${res.skipped} 人`;
+    if (res.groups_created && res.groups_created.length) msg += `；新建小组：${res.groups_created.join('、')}`;
     rosterMsg(msg);
+  } catch (e) {
+    alert(e.message);
+    if (btn) btn.disabled = false;
+  }
+}
+
+// 撤销本次导入：一次删掉这次加进来的所有人，名单内容留在上一步，改一改还能再导
+async function rosterImportUndo() {
+  const ri = state.rosterImport;
+  if (!ri || !ri.round) return;
+  const ids = (ri.round.ids || []).slice();
+  if (!ids.length) return;
+  const btn = $('#ri-undo-btn');
+  if (btn) btn.disabled = true;
+  try {
+    await api('/api/students/batch-delete', { method: 'POST', body: { ids, client: CLIENT_ID } });
+    ri.round = null;
+    ri.step = 2;
+    state.rosterImportSig = '';
     await refresh();
-  } catch (e) { alert(e.message); }
+    renderImportPanel(true);
+    rosterMsg(`已撤销这次导入，退回 ${ids.length} 人`);
+  } catch (e) {
+    if (btn) btn.disabled = false;
+    alert(e.message);
+  }
+}
+
+function onRosterImportClick(e) {
+  const ri = state.rosterImport;
+  if (!ri) return;
+  const btn = e.target.closest ? e.target.closest('button') : null;
+  if (!btn) return;
+  const go = btn.dataset.rigo || '';
+  if (btn.hasAttribute('data-rig')) { ri.gid = btn.dataset.rig || ''; renderImportPanel(); return; }
+  if (btn.dataset.ridedupe) {
+    ri.dedupe = btn.dataset.ridedupe;
+    localStorage.setItem('jiafen.importDedupe', ri.dedupe);
+    renderImportPanel();
+    return;
+  }
+  if (go === 'close') { rosterImportClose(); return; }
+  if (go === 'back') { importSetStep(ri.step - 1); return; }
+  if (go === 'next') { importSetStep(ri.step + 1); return; }
+  if (go === 'submit') { rosterImportSubmit(); return; }
+  if (go === 'again') { ri.text = ''; ri.round = null; ri.step = 2; renderImportPanel(true); return; }
+  if (go.indexOf('step') === 0) { importSetStep(Number(go.slice(4))); return; }
+  if (btn.id === 'ri-clear-btn') {
+    ri.text = '';
+    const ta = $('#ri-text');
+    if (ta) { ta.value = ''; ta.focus(); }
+    refreshImportParse();
+    return;
+  }
+  if (btn.id === 'ri-paste-btn') { rosterImportPaste(); return; }
+  if (btn.id === 'ri-undo-btn') { rosterImportUndo(); }
+}
+
+function onRosterImportInput(e) {
+  const ri = state.rosterImport;
+  if (!ri || !e.target || e.target.id !== 'ri-text') return;
+  ri.text = e.target.value;
+  refreshImportParse();
 }
 
 // 导出名单：按「小组,姓名」两列导出成 CSV，Excel/WPS 直接打开
@@ -1858,7 +2239,7 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#btn-add-group').addEventListener('click', createGroup);
   $('#btn-roster').addEventListener('click', openRoster);
   $('#roster-close').addEventListener('click', closeRoster);
-  $('#roster-import-btn').addEventListener('click', rosterImportOpen);
+  $('#roster-import-btn').addEventListener('click', () => rosterImportOpen('', false));
   $('#roster-export-btn').addEventListener('click', rosterExport);
   $('#roster-add-btn').addEventListener('click', rosterCreate);
   $('#roster-undo').addEventListener('click', rosterUndoLast);
@@ -1877,6 +2258,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (item) rosterScrollToGroup(item.dataset.gid || '');
   });
   $('#roster-body').addEventListener('click', e => {
+    const imp = e.target.closest ? e.target.closest('.rg-import') : null;
+    if (imp) { rosterImportOpen(imp.dataset.gid || '', true); return; }
     const add = e.target.closest ? e.target.closest('.rg-add') : null;
     if (add) { rosterQuickFocus(add.dataset.gid || ''); return; }
     const more = e.target.closest ? e.target.closest('.stu-more') : null;
@@ -1885,7 +2268,15 @@ document.addEventListener('DOMContentLoaded', () => {
       if (row) rosterToggleMenu(Number(row.dataset.sid));
     }
   });
-  // 点空白处收起行内小浮层
+  // 批量导入面板：选组、切换步骤、粘贴、提交都在这里代理
+  $('#roster-import').addEventListener('click', onRosterImportClick);
+  $('#roster-import').addEventListener('input', onRosterImportInput);
+  $('#roster-import').addEventListener('keydown', e => {
+    if (e.key !== 'Enter' || !(e.ctrlKey || e.metaKey)) return;
+    if (!state.rosterImport || e.target.id !== 'ri-text') return;
+    e.preventDefault();
+    importSetStep(state.rosterImport.step + 1);
+  });
   document.addEventListener('pointerdown', e => {
     if (!state.rosterOpen || state.rosterMenu == null) return;
     const t = e.target;
@@ -1902,6 +2293,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('keydown', e => {
     if (e.key !== 'Escape' || !state.rosterOpen) return;
     if (state.rosterMenu != null) { closeRowMenus(); return; }   // 先收浮层，再关窗口
+    if (state.rosterImport) { rosterImportClose(); return; }     // 再收导入面板，才轮到关窗口
     if (!rdrag) closeRoster();
   });
   $('#btn-class-score').addEventListener('click', applyClassCustom);
