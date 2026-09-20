@@ -245,7 +245,7 @@ input.masked { -webkit-text-security: disc; }
   border-radius: var(--radius);
   box-shadow: var(--shadow);
 }
-.sidebar { padding: 14px; }
+.sidebar { padding: 14px; overscroll-behavior: contain; }
 .panel { padding: 14px; }
 .panel-head {
   font-weight: 700;
