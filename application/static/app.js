@@ -2364,3 +2364,22 @@ document.addEventListener('DOMContentLoaded', () => {
   // 少数机型会忽略 viewport 设置，用内联样式再兜一层
   document.documentElement.style.touchAction = 'pan-x pan-y';
 })();
+
+/* ---- 弹窗打开时锁住背后的页面滚动 ----
+   名单、账号、清零这些窗口内部都有各自的滚动区，滚到头以后滚轮会「接力」传给背后的
+   页面，看起来就是窗口还开着、底下的整页却在动。这里在弹窗打开期间把 body 的滚动关掉
+   （名单里各个滚动区再靠 CSS 的 overscroll-behavior: contain 兜一层）。 */
+(function lockPageBehindModals() {
+  const sync = () => {
+    const open = !!document.querySelector('.modal:not(.hidden)');
+    if (open === document.body.classList.contains('modal-open')) return;
+    // 先量再锁：滚动条消失会让页面宽度跳一下，用右边距补回来
+    const gap = window.innerWidth - document.documentElement.clientWidth;
+    document.body.classList.toggle('modal-open', open);
+    document.body.style.paddingRight = open && gap > 0 ? gap + 'px' : '';
+  };
+  document.querySelectorAll('.modal').forEach(m =>
+    new MutationObserver(sync).observe(m, { attributes: true, attributeFilter: ['class'] }));
+  window.addEventListener('resize', sync);
+  sync();
+})();

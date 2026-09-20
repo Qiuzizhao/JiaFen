@@ -484,6 +484,10 @@ input.masked { -webkit-text-security: disc; }
   justify-content: center;
   padding: 20px;
 }
+/* 弹窗打开期间锁住背后的页面：窗口里的滚动区滚到头时，滚轮/触摸不会再带着整页一起滚 */
+body.modal-open { overflow: hidden; }
+.modal, .modal-box { overscroll-behavior: contain; }
+.roster-body, .roster-nav, .ri-body, .ri-preview { overscroll-behavior: contain; }
 .modal-box {
   background: var(--card);
   border-radius: 16px;
