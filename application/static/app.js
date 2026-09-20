@@ -1156,15 +1156,15 @@ function rosterGroupHTML(cls, gid) {
   const color = g ? (g.color || '#5b9bd5') : '#cbd5e1';
   const rows = list.map(s => rosterRowHTML(cls, s)).join('');
   const empty = want === ''
-    ? '还没有未分组的学生'
-    : '这一组还没有学生，点「＋ 加学生」直接加，或把别的学生拖过来';
+    ? '没有学生'
+    : '还没有学生';
   const score = g ? (Number(g.score) || 0) : null;
   return `<section class="roster-group${want === '' ? ' rg-ungrouped' : ''}" data-gid="${esc(want)}" style="--c:${esc(color)}">
       <div class="rg-head">
         <span class="rg-dot"></span>
         <span class="rg-name">${esc(g ? g.name : '未分组')}</span>
         <span class="rg-count">${list.length}人</span>
-        ${score == null ? '<span class="rg-score">拖进来就是没分组</span>' : `<span class="rg-score">小组分 ${score}</span>`}
+        ${score == null ? '' : `<span class="rg-score">小组分 ${score}</span>`}
         <span class="rg-btns">
           <button class="rg-add" data-gid="${esc(want)}">＋ 加学生</button>
           <button class="rg-import" data-gid="${esc(want)}" title="把一份名单批量粘进这一组">⇩ 批量导入</button>
@@ -1223,7 +1223,7 @@ function refreshRosterCounts() {
     const rows = sec.querySelector('.rg-rows');
     if (!rows) return;
     const ph = rows.querySelector('.rg-none');
-    const tip = gid === '' ? '还没有未分组的学生' : '这一组还没有学生，点「＋ 加学生」直接加，或把别的学生拖过来';
+    const tip = gid === '' ? '没有学生' : '还没有学生';
     if (list.length && ph) ph.remove();
     else if (!list.length && !ph) rows.insertAdjacentHTML('beforeend', `<div class="rg-none">${tip}</div>`);
   });
@@ -1403,11 +1403,11 @@ function importParseItems(cls, text, gid, dedupe) {
       let note = '';
       if (seen && seen.has(nm)) {
         kind = dedupe === 'skip' ? 'dup' : 'same';
-        note = dedupe === 'skip' ? '本组已有，跳过' : '本组已有，再进一个';
+        note = '已有同名';
       } else {
         let other = '';
         inGroup.forEach((names2, g) => { if (!other && g !== target && names2.has(nm)) other = g; });
-        if (other) { kind = 'other'; note = quickGroupName(cls, other) + '也有同名'; }
+        if (other) { kind = 'other'; note = '别组也有'; }
       }
       const take = kind !== 'dup';
       if (take) remember(target, nm);
@@ -1449,7 +1449,7 @@ function importParseHTML(items) {
     ? items.map(it => `<span class="ri-nm ${it.kind}">${esc(it.name)}${it.note ? `<small>${esc(it.note)}</small>` : ''}</span>`).join('')
     : '<span class="ri-nm empty">还没有内容</span>';
   return `<div class="ri-parse" id="ri-parse">
-      <div class="ri-psum" aria-live="polite">识别 <b>${items.length}</b> 个姓名 · 将导入 <b class="ok">${n}</b> 人 · 跳过 <b class="warn">${items.length - n}</b> 人</div>
+      ${items.length ? `<div class="ri-psum" aria-live="polite">将导入 <b class="ok">${n}</b> 人 · 跳过 <b class="warn">${items.length - n}</b> 人</div>` : ''}
       <div class="ri-names">${names}</div>
     </div>`;
 }
@@ -1468,22 +1468,22 @@ function importSections(take) {
 function importPreviewHTML(list, skip) {
   const shown = list.slice(0, 8);
   const rows = shown.map(it => {
-    const note = skip ? '本组已有同名，跳过' : (it.kind === 'other' ? it.note : '加入 ' + it.group);
+    const note = skip ? '跳过' : (it.kind === 'other' ? it.note : '');
     return `<div class="ri-prow${skip ? ' skip' : ''}">`
       + `<span class="ri-pav" style="--c:${esc(skip ? '#cbd5e1' : it.color)}">${esc(stuInitial(it.name))}</span>`
       + `<span class="ri-pname">${esc(it.name)}</span>`
-      + `<span class="ri-pnote">${esc(note)}</span>`
+      + (note ? `<span class="ri-pnote">${esc(note)}</span>` : '')
       + '</div>';
   }).join('');
   const more = list.length > shown.length
-    ? `<div class="ri-more">还有 ${list.length - shown.length} 人，共 ${list.length} 人</div>` : '';
+    ? `<div class="ri-more">还有 ${list.length - shown.length} 人（共 ${list.length} 人）</div>` : '';
   return rows + more;
 }
 
 function importHeadHTML(cls, ri) {
   const color = ri.gid === '' ? '#cbd5e1' : groupColor(cls, ri.gid);
   return `<span class="ri-bar" style="--c:${esc(color)}"></span>`
-    + '<span class="ri-title">批量导入到小组</span>'
+    + '<span class="ri-title">批量导入</span>'
     + `<span class="ri-lock" style="--c:${esc(color)}"><i></i>${esc(quickGroupName(cls, ri.gid))} · 现有 ${studentsOfGroup(cls, ri.gid).length} 人`
     + '<button type="button" data-rigo="step1">换组</button></span>'
     + '<button type="button" class="ri-close" id="ri-close-btn" aria-label="关闭导入面板">✕</button>';
@@ -1505,12 +1505,12 @@ function importStepHTML(cls, ri, items) {
 
   if (ri.step === 1) {
     return `<div class="ri-chips" role="group" aria-label="目标小组">${importGroupChipsHTML(cls)}</div>`
-      + `<p class="ri-tip">${ri.locked ? '从小组卡片进来时目标已经选好，这里只是换组。' : '先点一个小组，粘进来的名字就落到它下面；名单里写了组名的行，按行里的组走。'}</p>`;
+      + `<p class="ri-tip">${ri.locked ? '目标已选好，可以换组。' : '点一个小组，名字就进这一组。'}</p>`;
   }
 
   if (ri.step === 2) {
     return `<div class="ri-paste">
-        <div class="ri-ph"><b>粘贴名单</b><span>一行一个；Excel 里复制一列直接粘，逗号、顿号、分号、空格都当分隔</span></div>
+        <div class="ri-ph"><span>一行一个，空格 / 逗号 / 顿号都当分隔</span></div>
         <textarea id="ri-text" placeholder="张明轩&#10;李文博&#10;王雨欣，陈嘉禾&#10;第3组,宋佳琪" autocomplete="off" spellcheck="false"></textarea>
         <div class="ri-tools">
           <button type="button" class="ghost" id="ri-paste-btn">从剪贴板粘贴</button>
@@ -1519,7 +1519,7 @@ function importStepHTML(cls, ri, items) {
       </div>
       ${importParseHTML(items)}
       <div class="ri-rule">
-        <span>「${esc(gname)}」已经有同名</span>
+        <span>本组同名</span>
         <div class="ri-seg">
           <button type="button" data-ridedupe="skip" class="${ri.dedupe === 'skip' ? 'on' : ''}">自动跳过</button>
           <button type="button" data-ridedupe="allow" class="${ri.dedupe === 'allow' ? 'on' : ''}">仍然导入</button>
@@ -1532,47 +1532,45 @@ function importStepHTML(cls, ri, items) {
     const body = sections.map(sec => {
       const isNew = sec.gid.indexOf('new:') === 0;
       const label = isNew
-        ? `${sec.name} · 新增 ${sec.list.length} 人（会自动建这个小组）`
-        : `${sec.name} · 新增 ${sec.list.length} 人（现有 ${studentsOfGroup(cls, sec.gid).length} 人）`;
+        ? `${sec.name} +${sec.list.length}（新建）`
+        : `${sec.name} +${sec.list.length}（现有 ${studentsOfGroup(cls, sec.gid).length} 人）`;
       return `<div class="ri-plabel">${esc(label)}</div>${importPreviewHTML(sec.list, false)}`;
     }).join('');
     const skipBlock = skip.length
-      ? `<div class="ri-plabel">跳过 ${skip.length} 人，不进名单</div>${importPreviewHTML(skip, true)}`
+      ? `<div class="ri-plabel">跳过 ${skip.length} 人</div>${importPreviewHTML(skip, true)}`
       : '';
     const tags = sections.map(sec => `<span class="ri-gtag" style="--c:${esc(sec.color)}"><i></i>${esc(sec.name)} +${sec.list.length}</span>`).join('');
     const mine = take.filter(x => x.gid === ri.gid).length;
     const before = studentsOfGroup(cls, ri.gid).length;
     const extra = take.length - mine;
-    return `<div class="ri-confirm">把 <b>${take.length}</b> 名学生导入到名单${extra ? `，其中 ${extra} 人按行里的组名落组` : ''}${tags}`
+    return `<div class="ri-confirm">将导入 <b>${take.length}</b> 人${tags}`
       + `<span class="ri-delta">${esc(gname)} ${before}人 → ${before + mine}人</span></div>`
-      + `<div class="ri-preview">${body}${skipBlock}</div>`
-      + '<p class="ri-tip">只影响上面列出的组，其他小组和学生分数都不动。</p>';
+      + `<div class="ri-preview">${body}${skipBlock}</div>`;
   }
 
   const round = ri.round || { added: 0, skipped: 0, groups: [] };
   const gl = round.groups || [];
   const head = gl.length === 1
-    ? `已把 ${round.added} 名学生加到 ${esc(gl[0].name)}`
-    : `已导入 ${round.added} 名学生：${gl.map(g => `${esc(g.name)} ${g.added}人`).join('、')}`;
+    ? `已加到 ${esc(gl[0].name)}：${round.added} 人`
+    : `已导入 ${round.added} 人：${gl.map(g => `${esc(g.name)} ${g.added}`).join('、')}`;
   return `<div class="ri-done" role="status"><span>${head}</span>`
     + '<button type="button" id="ri-undo-btn">撤销本次导入</button></div>'
-    + '<p class="ri-tip">新加进来的学生在名单里会蓝色高亮几秒，方便当场对照。</p>'
-    + (round.skipped ? `<p class="ri-tip">还有 ${round.skipped} 人按规则跳过：目标组里已经有同名。</p>` : '');
+    + (round.skipped ? `<p class="ri-tip">跳过 ${round.skipped} 个同名。</p>` : '');
 }
 
 function importFootHTML(cls, ri, items) {
   const n = importTake(items).length;
   if (ri.step === 1) {
     return '<button type="button" class="ghost" data-rigo="close">取消</button><span class="ri-gap"></span>'
-      + '<button type="button" class="primary" data-rigo="next">下一步：粘贴名单</button>';
+      + '<button type="button" class="primary" data-rigo="next">下一步</button>';
   }
   if (ri.step === 2) {
     return '<button type="button" class="ghost" data-rigo="back">上一步</button><span class="ri-gap"></span>'
-      + `<button type="button" class="primary" id="ri-submit" data-rigo="next"${n ? '' : ' disabled'}>下一步：确认 ${n} 人</button>`;
+      + `<button type="button" class="primary" id="ri-submit" data-rigo="next"${n ? '' : ' disabled'}>下一步（${n} 人）</button>`;
   }
   if (ri.step === 3) {
     return '<button type="button" class="ghost" data-rigo="back">返回修改</button><span class="ri-gap"></span>'
-      + `<button type="button" class="primary" id="ri-submit" data-rigo="submit">确认导入 ${n} 人</button>`;
+      + `<button type="button" class="primary" id="ri-submit" data-rigo="submit">导入 ${n} 人</button>`;
   }
   return '<button type="button" class="ghost" data-rigo="again">再导入一批</button><span class="ri-gap"></span>'
     + '<button type="button" class="primary" data-rigo="close">完成</button>';
@@ -1635,7 +1633,7 @@ function renderRoster() {
 
   let html = '';
   if (!cls.groups.length && !all.length) {
-    html += '<div class="roster-empty">这个班还没有小组，也还没有学生。<br>先在记分板上「＋ 添加小组」建好小组，再点上面的「批量导入」，把班级名单一行一个粘进来。</div>';
+    html += '<div class="roster-empty">还没有小组和学生。<br>先在记分板「＋ 添加小组」，再回来「批量导入」名单。</div>';
   } else {
     cls.groups.forEach(g => { html += rosterGroupHTML(cls, g.id); });
     html += rosterGroupHTML(cls, '');
@@ -1841,7 +1839,7 @@ async function rosterImportPaste() {
     rosterMsg(`已粘进来 ${importItems().length} 个姓名`);
   } catch (e) {
     if (ta) ta.focus();
-    rosterMsg('浏览器不让直接读剪贴板：点一下输入框，长按选「粘贴」也一样');
+    rosterMsg('浏览器不允许读取剪贴板，请手动粘贴');
   }
 }
 
@@ -1875,8 +1873,8 @@ async function rosterImportSubmit() {
     renderImportPanel();
     flashStudents(res.ids || []);
     let msg = `已导入 ${res.added} 人`;
-    if (res.skipped) msg += `，跳过重复 ${res.skipped} 人`;
-    if (res.groups_created && res.groups_created.length) msg += `；新建小组：${res.groups_created.join('、')}`;
+    if (res.skipped) msg += `（跳过 ${res.skipped} 个同名）`;
+    if (res.groups_created && res.groups_created.length) msg += `；新建 ${res.groups_created.join('、')}`;
     rosterMsg(msg);
   } catch (e) {
     alert(e.message);
@@ -1899,7 +1897,7 @@ async function rosterImportUndo() {
     state.rosterImportSig = '';
     await refresh();
     renderImportPanel(true);
-    rosterMsg(`已撤销这次导入，退回 ${ids.length} 人`);
+    rosterMsg('已撤回本次导入');
   } catch (e) {
     if (btn) btn.disabled = false;
     alert(e.message);

@@ -8,7 +8,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png?v=20260915">
   <link rel="icon" href="/favicon.ico?v=20260915" sizes="any">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=20260915">
-  <link rel="stylesheet" href="/style.css?v=20260920c">
+  <link rel="stylesheet" href="/style.css?v=20260920d">
 </head>
 <body>
 
@@ -141,7 +141,7 @@
       <div class="roster-tools">
         <label class="roster-search">
           <span aria-hidden="true">🔍</span>
-          <input id="roster-search" type="text" placeholder="查找学生，输入姓氏即可定位" autocomplete="off">
+          <input id="roster-search" type="text" placeholder="查找学生" autocomplete="off">
         </label>
         <button id="roster-import-btn" class="ghost">批量导入</button>
         <button id="roster-export-btn" class="ghost">导出名单</button>
@@ -149,7 +149,7 @@
       <div id="roster-quick" class="roster-quick">
         <div id="roster-chips" class="rq-chips"></div>
         <div class="rq-row">
-          <input id="stu-new-name" placeholder="输入姓名，回车就加进小组" maxlength="20" autocomplete="off" enterkeyhint="done">
+          <input id="stu-new-name" placeholder="输入姓名，回车添加" maxlength="20" autocomplete="off" enterkeyhint="done">
           <button id="roster-add-btn" class="primary" type="button">添加</button>
         </div>
         <div class="rq-hint">
@@ -168,7 +168,6 @@
         <nav id="roster-nav" class="roster-nav" aria-label="快速跳转"></nav>
         <div id="roster-body" class="roster-body"></div>
       </div>
-      <p class="roster-foot">按住学生左边的 ⠿ 拖动可以换组；点右边的 ⋯ 能改名 / 换组 / 删除。</p>
     </div>
   </div>
 
@@ -205,6 +204,6 @@
     <div id="projector-board" class="projector-board"></div>
   </div>
 
-  <script src="/app.js?v=20260920c"></script>
+  <script src="/app.js?v=20260920d"></script>
 </body>
 </html>

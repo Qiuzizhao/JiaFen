@@ -624,7 +624,6 @@ html { -webkit-text-size-adjust: 100%; }
 /* 第二步：粘贴 + 实时解析 */
 .ri-paste { background: #f7f9fc; border: 1px solid var(--line); border-radius: 11px; padding: 10px; }
 .ri-ph { display: flex; align-items: baseline; gap: 8px; margin-bottom: 7px; flex-wrap: wrap; }
-.ri-ph b { font-size: 12.5px; color: #374151; }
 .ri-ph span { font-size: 11.5px; color: var(--muted); }
 .ri-paste textarea { width: 100%; min-height: 132px; font-family: inherit; font-size: 14px; line-height: 1.75; border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px; resize: vertical; background: #fff; color: var(--text); outline: none; }
 .ri-paste textarea:focus { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(59, 130, 246, .14); }
@@ -677,7 +676,6 @@ html { -webkit-text-size-adjust: 100%; }
 /* 刚导入进来的学生在名单里闪一下，方便当场对照 */
 @keyframes stuFlash { from { background: #dbeafe; } to { background: transparent; } }
 .stu-row.flash { animation: stuFlash 3s ease-out 1; }
-.roster-foot { color: var(--muted); font-size: 12px; margin: 8px 0 0; padding-top: 10px; border-top: 1px solid var(--line); }
 @media (max-width: 720px) {
   input, select, textarea { font-size: 16px; }
   .custom input, .custom input.amount { font-size: 16px; }
@@ -701,18 +699,17 @@ html { -webkit-text-size-adjust: 100%; }
   .rg-btns button { flex: 1 1 0; padding: 8px 10px; }
   /* 导入面板：手机上按钮摊平，点着更稳 */
   .ri-head { padding: 9px 10px; }
-  /* 手机上标题和 ✕ 占第一行，组名胶囊整行掉到第二行，不会把 ✕ 挤到左边单独一行 */
-  .ri-title { order: 1; flex: 1 1 auto; }
+  /* 第一行「标题 + ✕」，第二行整行是组名胶囊：不管屏幕多窄，✕ 都在右边，不会被挤到左边单独一行 */
+  .ri-title { order: 1; flex: 1 1 auto; min-width: 0; }
   .ri-close { order: 2; }
-  .ri-lock { order: 3; flex: 0 1 auto; margin-left: 0; }
+  .ri-lock { order: 3; flex: 1 1 100%; margin-left: 0; }
   .ri-body { padding: 10px 10px 3px; }
   .ri-foot { padding: 10px 10px 11px; }
   .ri-foot button { flex: 1 1 0; padding: 11px 10px; }
   .ri-foot .ri-gap { display: none; }
   .ri-close { width: 34px; height: 34px; }
   /* 手机上导入面板独占弹窗剩下的高度：下面的名单先让位，不然两边都只挤出一条 */
-  .roster-box.importing .roster-main,
-  .roster-box.importing .roster-foot { display: none; }
+  .roster-box.importing .roster-main { display: none; }
   .roster-import-panel { flex: 1 1 auto; max-height: none; }
   .ri-preview { max-height: 150px; }
   .ri-tools button { flex: 1 1 0; padding: 9px 10px; }
