@@ -31,6 +31,15 @@ function esc(s) {
   }[m]));
 }
 function pickColor() { return PALETTE[colorIndex++ % PALETTE.length]; }
+
+// ---------------- 移动端辅助 ----------------
+// 状态栏/地址栏配色跟随当前界面：投屏是深色底，其余是白色顶栏。
+// （浮层打开时锁背景滚动统一由文件末尾的 lockPageBehindOverlays 处理）
+function setThemeColor(dark) {
+  const m = document.querySelector('meta[name="theme-color"]');
+  if (m) m.setAttribute('content', dark ? '#0f172a' : '#ffffff');
+}
+
 function saveSel() { localStorage.setItem('jiafen.currentClassId', String(state.currentClassId || '')); }
 function loadSel() { const v = localStorage.getItem('jiafen.currentClassId'); return v ? Number(v) : null; }
 function getCurrentClass() { return state.classes.find(c => c.id === state.currentClassId) || null; }
@@ -658,6 +667,7 @@ async function doLogin() {
   } catch (e) { $('#login-err').textContent = e.message; }
 }
 async function doLogout() {
+  closeAccount();   // 退出入口在账号弹窗里，顺手把弹窗关掉
   try { await api('/api/logout', { method: 'POST' }); } catch (e) {}
   if (es) es.close();
   state.authed = false;
@@ -683,7 +693,9 @@ function openAccount() {
   renderAccount();
   $('#account-modal').classList.remove('hidden');
 }
-function closeAccount() { $('#account-modal').classList.add('hidden'); }
+function closeAccount() {
+  $('#account-modal').classList.add('hidden');
+}
 
 async function saveMyPassword() {
   const oldPw = $('#pw-old').value, newPw = $('#pw-new').value;
@@ -880,8 +892,12 @@ async function init() {
 function openProjector() {
   renderProjector();
   $('#projector').classList.remove('hidden');
+  setThemeColor(true);
 }
-function closeProjector() { $('#projector').classList.add('hidden'); }
+function closeProjector() {
+  $('#projector').classList.add('hidden');
+  setThemeColor(false);
+}
 
 // 投屏卡片上的 +1 / -1：按下时先记住「哪个按钮、在什么位置」，抬起时再按坐标重新找按钮。
 // 这样即使按下和抬起之间卡片被重建（后台对账刷新、别台设备推送），这一次点击也不会丢，
@@ -2363,21 +2379,28 @@ document.addEventListener('DOMContentLoaded', () => {
   document.documentElement.style.touchAction = 'pan-x pan-y';
 })();
 
-/* ---- 弹窗打开时锁住背后的页面滚动 ----
+/* ---- 浮层打开时锁住背后的页面滚动 ----
    名单、账号、清零这些窗口内部都有各自的滚动区，滚到头以后滚轮会「接力」传给背后的
-   页面，看起来就是窗口还开着、底下的整页却在动。这里在弹窗打开期间把 body 的滚动关掉
+   页面，看起来就是窗口还开着、底下的整页却在动。投屏模式和手机端的班级抽屉同理。
+   这里在浮层打开期间把 body 的滚动关掉
    （名单里各个滚动区再靠 CSS 的 overscroll-behavior: contain 兜一层）。 */
-(function lockPageBehindModals() {
+(function lockPageBehindOverlays() {
   const sync = () => {
-    const open = !!document.querySelector('.modal:not(.hidden)');
+    const open = !!document.querySelector(
+      '.modal:not(.hidden), #projector:not(.hidden), .sidebar.open'
+    );
     if (open === document.body.classList.contains('modal-open')) return;
     // 先量再锁：滚动条消失会让页面宽度跳一下，用右边距补回来
     const gap = window.innerWidth - document.documentElement.clientWidth;
     document.body.classList.toggle('modal-open', open);
     document.body.style.paddingRight = open && gap > 0 ? gap + 'px' : '';
   };
-  document.querySelectorAll('.modal').forEach(m =>
-    new MutationObserver(sync).observe(m, { attributes: true, attributeFilter: ['class'] }));
+  const watch = el => {
+    if (el) new MutationObserver(sync).observe(el, { attributes: true, attributeFilter: ['class'] });
+  };
+  document.querySelectorAll('.modal').forEach(watch);
+  watch(document.getElementById('projector'));
+  watch(document.querySelector('.sidebar'));
   window.addEventListener('resize', sync);
   sync();
 })();

@@ -21,6 +21,9 @@ body {
   font-family: "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
   background: var(--bg);
   color: var(--text);
+  /* 触摸优化：去掉点按时的灰色高亮，并关闭双击缩放（双指缩放仍可用） */
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
 .hidden { display: none !important; }
@@ -172,62 +175,6 @@ input.masked { -webkit-text-security: disc; }
 #btn-classes { display: none; }
 .class-close { display: none; margin-left: auto; }
 .class-backdrop { display: none; }
-@media (max-width: 720px) {
-  .layout { grid-template-columns: 1fr; gap: 12px; padding: 12px; }
-  .sidebar { order: 2; }
-  .main { order: 1; }
-  .right { order: 3; flex-direction: column; }
-  .right .panel { flex: none; }
-  .topbar { padding: 10px 14px; gap: 8px; }
-  .brand { font-size: 16px; }
-  .actions { width: 100%; justify-content: flex-start; flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 4px; }
-  .actions .ghost { padding: 8px 12px; font-size: 13px; white-space: nowrap; flex: none; }
-  .main, .sidebar, .right .panel { padding: 12px; }
-  .main { min-height: 0; }
-  .board-head { flex-direction: column; align-items: stretch; gap: 8px; }
-  .board { grid-template-columns: 1fr; gap: 12px; }
-  .class-score { gap: 6px; padding: 10px; }
-  .class-score .cs-quick { flex: 1 1 100%; }
-  .class-score .cs-quick .qbtn { flex: 1; min-width: 0; }
-  .class-score .cs-custom { flex: 1 1 100%; margin-left: 0; }
-  .class-score .cs-custom input { flex: 1; width: auto; }
-  .gscore { font-size: 34px; }
-  input, .custom input { font-size: 16px; }
-  .icon-btn { width: 32px; height: 32px; font-size: 16px; }
-  .drag-handle { font-size: 18px; }
-  .qbtn { padding: 10px 0; font-size: 15px; }
-  .class-list .class-item .tools { opacity: 1; visibility: visible; pointer-events: auto; }
-  .mobile-class-select { display: block; width: 100%; margin-bottom: 12px; font-size: 16px; padding: 12px; }
-  .history { max-height: 320px; }
-  #projector { padding: 14px 12px; }
-  .projector-title { font-size: 22px; margin-bottom: 14px; padding: 0 40px; }
-  .projector-board { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
-  .proj-card { padding: 14px; border-radius: 14px; }
-  .proj-card .p-name { font-size: 18px; }
-  .proj-card .p-score { font-size: 44px; margin-top: 4px; }
-  .close-btn { top: 12px; right: 14px; padding: 8px 12px; font-size: 14px; }
-  .proj-tools { top: 12px; right: 14px; }
-  .proj-tools .close-btn { padding: 8px 12px; font-size: 14px; }
-  /* 顶部操作：隐藏导出/导入；显示“班级”按钮 */
-  #btn-classes { display: inline-flex; }
-  #btn-export, #btn-import { display: none; }
-  .class-close { display: inline-flex; }
-  /* 班级板块改为点击按钮后弹出的窗口 */
-  .sidebar {
-    display: none;
-    position: fixed;
-    top: 0; left: 0; right: 0;
-    margin: 0;
-    max-height: 82vh;
-    overflow-y: auto;
-    z-index: 60;
-    border-radius: 0 0 var(--radius) var(--radius);
-    box-shadow: 0 12px 30px rgba(0,0,0,.22);
-  }
-  .sidebar.open { display: block; }
-  .class-backdrop.open { display: block; position: fixed; inset: 0; z-index: 55; background: rgba(0,0,0,.45); }
-}
-
 /* 触屏/粗指针设备（无 hover）：始终显示班级条目的编辑/删除按钮 */
 @media (hover: none), (pointer: coarse) {
   .class-list .class-item .tools { opacity: 1; visibility: visible; pointer-events: auto; }
@@ -422,6 +369,7 @@ input.masked { -webkit-text-security: disc; }
   min-height: 0;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;   /* 滚到底后不要把滚动传给背后的页面 */
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 20px;
@@ -435,6 +383,8 @@ input.masked { -webkit-text-security: disc; }
   border-radius: 18px;
   padding: 20px;
   text-align: center;
+  user-select: none;              /* 长按计分时不会选中文字 */
+  -webkit-user-select: none;
 }
 .proj-card .p-name { font-size: 22px; font-weight: 600; }
 .proj-card .p-score { font-size: 64px; font-weight: 800; margin-top: 8px; }
@@ -500,6 +450,13 @@ body.modal-open { overflow: hidden; }
 .modal-box input[type="password"] { width: 100%; margin: 6px 0 10px; }
 .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 8px; }
 .modal-actions button { flex: 1; padding: 10px 0; }
+/* 退出登录放在账号弹窗底部，单独一段 + 分隔线，和上面的保存操作区分开 */
+.modal-foot { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+.modal-logout {
+  display: flex; align-items: center; justify-content: center;
+  width: 100%; min-height: 44px; padding: 11px 0;
+  font-size: 14px; font-weight: 600; border-radius: 10px;
+}
 button.primary.danger { background: var(--down); }
 button.primary.danger:hover { background: var(--down-dark); }
 
@@ -719,4 +676,169 @@ html { -webkit-text-size-adjust: 100%; }
   .ri-ph { margin-bottom: 5px; }
   .ri-ph span { font-size: 11px; line-height: 1.5; }
   .ri-steps { padding: 7px 10px 0; }
+}
+
+/* ---------------------------------------------------------------------------
+   移动端布局（≤720px）
+   注意：这一整块必须放在所有基础样式之后。之前它位于文件中段，被后面的
+   .main / .gscore / .history / #projector / .proj-card 等基础规则按「同权重
+   后者优先」覆盖掉了，等于从未生效——例如投屏卡片分数一直是 64px 而不是 44px、
+   卡片一直是一列而不是两列。
+--------------------------------------------------------------------------- */
+@media (max-width: 720px) {
+  .layout { grid-template-columns: 1fr; gap: 12px; padding: 12px; }
+  .sidebar { order: 2; }
+  .main { order: 1; }
+  .right { order: 3; flex-direction: column; }
+  .right .panel { flex: none; }
+  .topbar { padding: 10px 14px; gap: 8px; }
+  .brand { font-size: 16px; }
+  .actions { width: 100%; justify-content: flex-start; flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 4px; }
+  .actions .ghost { padding: 8px 12px; font-size: 13px; white-space: nowrap; flex: none; }
+  .main, .sidebar, .right .panel { padding: 12px; }
+  .main { min-height: 0; }
+  .board-head { flex-direction: column; align-items: stretch; gap: 8px; }
+  .board { grid-template-columns: 1fr; gap: 12px; }
+  .class-score { gap: 6px; padding: 10px; }
+  .class-score .cs-quick { flex: 1 1 100%; }
+  .class-score .cs-quick .qbtn { flex: 1; min-width: 0; }
+  .class-score .cs-custom { flex: 1 1 100%; margin-left: 0; }
+  .class-score .cs-custom input { flex: 1; width: auto; }
+  .gscore { font-size: 34px; }
+  input, .custom input { font-size: 16px; }
+  .icon-btn { width: 32px; height: 32px; font-size: 16px; }
+  .drag-handle { font-size: 18px; }
+  .qbtn { padding: 10px 0; font-size: 15px; }
+  .class-list .class-item .tools { opacity: 1; visibility: visible; pointer-events: auto; }
+  .mobile-class-select { display: block; width: 100%; margin-bottom: 12px; font-size: 16px; padding: 12px; }
+  .history { max-height: 320px; }
+  #projector { padding: 14px 12px; }
+  .projector-title { font-size: 22px; margin-bottom: 14px; padding: 0 40px; }
+  .projector-board { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .proj-card { padding: 14px; border-radius: 14px; }
+  .proj-card .p-name { font-size: 18px; }
+  .proj-card .p-score { font-size: 44px; margin-top: 4px; }
+  .close-btn { top: 12px; right: 14px; padding: 8px 12px; font-size: 14px; }
+  .proj-tools { top: 12px; right: 14px; }
+  .proj-tools .close-btn { padding: 8px 12px; font-size: 14px; }
+  /* 顶部操作：隐藏导出/导入；显示“班级”按钮 */
+  #btn-classes { display: inline-flex; }
+  #btn-export, #btn-import { display: none; }
+  .class-close { display: inline-flex; }
+  /* 班级板块改为点击按钮后弹出的窗口 */
+  .sidebar {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    margin: 0;
+    max-height: 82vh;
+    overflow-y: auto;
+    z-index: 60;
+    border-radius: 0 0 var(--radius) var(--radius);
+    box-shadow: 0 12px 30px rgba(0,0,0,.22);
+  }
+  .sidebar.open { display: block; }
+  .class-backdrop.open { display: block; position: fixed; inset: 0; z-index: 55; background: rgba(0,0,0,.45); }
+}
+
+/* ---------------------------------------------------------------------------
+   手机安全区（状态栏 / 刘海 / 底部指示条）
+   index.html 的 viewport 已加 viewport-fit=cover，这里用 env(safe-area-inset-*)
+   把贴边的元素顶开。投屏模式的两个按钮原来固定在 top:12px，会被状态栏压住。
+   不支持 env() 的浏览器会忽略这些声明，自动沿用上面的默认值，不会更糟。
+--------------------------------------------------------------------------- */
+.topbar {
+  padding-top: calc(12px + env(safe-area-inset-top, 0px));
+  padding-left: calc(20px + env(safe-area-inset-left, 0px));
+  padding-right: calc(20px + env(safe-area-inset-right, 0px));
+}
+.layout {
+  padding-left: calc(20px + env(safe-area-inset-left, 0px));
+  padding-right: calc(20px + env(safe-area-inset-right, 0px));
+  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+}
+/* 投屏工具条：用 max() 保证不会比原来的间距更小 */
+.proj-tools {
+  top: max(20px, env(safe-area-inset-top, 0px));
+  right: max(24px, env(safe-area-inset-right, 0px));
+}
+/* 投屏整屏：四周都让开安全区，横屏时左右刘海也算进去 */
+#projector {
+  padding-top: max(30px, env(safe-area-inset-top, 0px));
+  padding-right: max(40px, env(safe-area-inset-right, 0px));
+  padding-bottom: max(30px, env(safe-area-inset-bottom, 0px));
+  padding-left: max(40px, env(safe-area-inset-left, 0px));
+}
+
+@media (max-width: 720px) {
+  .topbar {
+    padding-top: calc(10px + env(safe-area-inset-top, 0px));
+    padding-left: calc(14px + env(safe-area-inset-left, 0px));
+    padding-right: calc(14px + env(safe-area-inset-right, 0px));
+  }
+  .layout {
+    padding-left: calc(12px + env(safe-area-inset-left, 0px));
+    padding-right: calc(12px + env(safe-area-inset-right, 0px));
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+  /* 移动端「班级」弹窗贴在屏幕顶部，同样要让开状态栏 */
+  .sidebar {
+    padding-top: calc(14px + env(safe-area-inset-top, 0px));
+  }
+  .proj-tools {
+    top: max(12px, env(safe-area-inset-top, 0px));
+    right: max(14px, env(safe-area-inset-right, 0px));
+  }
+  #projector {
+    padding-top: max(14px, env(safe-area-inset-top, 0px));
+    padding-right: max(12px, env(safe-area-inset-right, 0px));
+    padding-bottom: max(14px, env(safe-area-inset-bottom, 0px));
+    padding-left: max(12px, env(safe-area-inset-left, 0px));
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   移动端体验优化
+   1. 顶栏按钮加大触控目标、隐藏横向滚动条
+   2. 记分卡快捷按钮加高到便于手指点按
+   3. 投屏工具条改为跟随布局，不再压住班级标题
+   4. 投屏卡片两个加减分按钮各占一半宽度，不会再挤出卡片
+   5. 登录框与弹窗可滚动，软键盘弹出时不会被顶出屏幕
+--------------------------------------------------------------------------- */
+@media (max-width: 720px) {
+  .actions { gap: 6px; scrollbar-width: none; }
+  .actions::-webkit-scrollbar { display: none; }
+  /* 顶栏现在只剩「班级 / 语音播报 / 投屏模式 / 账号」四个按钮，
+     内边距和间距都收窄一点、账号按钮限宽，保证 360px 及以上一行放得下 */
+  .actions .ghost { padding: 10px 10px; font-size: 14px; }
+  .who-btn { max-width: 96px; }
+
+  .qbtn { padding: 12px 0; font-size: 15px; }
+  .icon-btn { width: 36px; height: 36px; font-size: 17px; }
+  .lb-toggle button { padding: 8px 12px; font-size: 13px; }
+
+  #login, .modal {
+    align-items: flex-start;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: max(16px, env(safe-area-inset-top, 0px)) 16px max(16px, env(safe-area-inset-bottom, 0px));
+  }
+  /* margin:auto 让内容有空间时居中、空间不够时贴顶并可滚动 */
+  .login-box, .modal-box { margin: auto; }
+  .modal-box { padding: 18px; }
+  /* 一行多个输入框在手机上挤不下，改为竖排 */
+  .pw-row { flex-wrap: wrap; }
+  .pw-row input, .pw-row button { flex: 1 1 100%; }
+
+  .proj-tools {
+    position: static;
+    justify-content: flex-end;
+    margin-bottom: 10px;
+  }
+  .proj-tools .close-btn { padding: 10px 14px; font-size: 15px; min-height: 44px; }
+  .projector-title { padding: 0; margin-bottom: 12px; }
+
+  .proj-card { padding: 14px; }
+  .proj-card .p-actions { gap: 8px; margin-top: 12px; }
+  .proj-card .pbtn { flex: 1 1 0; min-width: 0; padding: 12px 0; font-size: 22px; }
 }
