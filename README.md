@@ -43,7 +43,7 @@
 - 后端：Python + Flask，SQLite 存储
 - 前端：原生 HTML / CSS / JS 单页应用
 - 实时：Server-Sent Events（SSE）
-- 部署：Docker Compose + nginx 反向代理 + Cloudflare（Flexible SSL，无需自备证书）
+- 部署：Docker Compose + nginx 反向代理 + Cloudflare DNS-only（灰云直连，源站使用 Let's Encrypt 证书）
 
 ## 功能
 
@@ -110,9 +110,9 @@ python application/app.py
 - **全班加减分**：记分板上方「全班」一行在手机上自动换行（六个快捷分值一排、自定义分值一行），不会横向溢出。
 - **投屏模式**：手机上可上下滚动查看全部小组，卡片自动改双列布局。
 
-## 部署到云服务器（nginx 反向代理 + Cloudflare）
+## 部署到云服务器（nginx 反向代理 + Cloudflare 灰云直连）
 
-前提：一台有公网 IP 的云服务器 + 一个在 Cloudflare 管理的域名，且服务器上已有 nginx（默认监听 80 端口）。
+前提：一台有公网 IP 的云服务器 + 一个在 Cloudflare 管理的域名；服务器安装 Docker，主机上安装 Nginx。云服务器安全组及防火墙需开放 TCP 80 和 443；应用仅绑定本机 `127.0.0.1:5002`。
 
 ### 第 1 步：服务器装 Docker
 
@@ -145,14 +145,14 @@ cd /srv/jiafen && docker compose up -d --build
 
 应用会映射到服务器的 `127.0.0.1:5002`（只本机可访问，供 nginx 反代）。
 
-### 第 4 步：配置 nginx 反代
+### 第 4 步：先配置 nginx HTTP 反代
 
-在 `/etc/nginx/sites-enabled/jiafen` 写入下面内容（把 `jiafen.example.com` 换成你的域名）：
+先在 `/etc/nginx/sites-enabled/jiafen` 配置 HTTP 反代，让 Certbot 能通过 80 端口完成域名验证（将 `jiafen.qiuzizhao.com` 换成实际域名）：
 
 ```nginx
 server {
     listen 80;
-    server_name jiafen.example.com;
+    server_name jiafen.qiuzizhao.com;
     client_max_body_size 20m;
     location / {
         proxy_pass http://127.0.0.1:5002;
@@ -176,11 +176,72 @@ sudo nginx -t && sudo systemctl reload nginx
 
 > `proxy_buffering off` 很关键：否则 Server-Sent Events 实时推送会被缓冲。
 
-### 第 5 步：Cloudflare DNS
+### 第 5 步：申请源站 HTTPS 证书
 
-在 Cloudflare 里把子域名加一条 **A 记录**指向服务器公网 IP，并打开**代理（橙色云朵）**；SSL 模式设成 **Flexible**（Cloudflare 在边缘做 HTTPS，回源走 HTTP 到服务器 80）。
+使用公开可信的 Let's Encrypt 证书。Cloudflare 橙云可以先保持开启；DNS 记录的源站目标必须指向这台服务器，且外网可通过 HTTP 到达 80 端口。
 
-浏览器打开 `https://你的域名` 即可。
+```bash
+sudo apt update
+sudo apt install certbot python3-certbot-nginx
+sudo certbot certonly --nginx -d jiafen.qiuzizhao.com
+```
+
+申请成功后，证书路径为：
+
+```text
+/etc/letsencrypt/live/jiafen.qiuzizhao.com/fullchain.pem
+/etc/letsencrypt/live/jiafen.qiuzizhao.com/privkey.pem
+```
+
+### 第 6 步：配置 HTTPS 并强制跳转
+
+在同一 Nginx 配置中，将 80 端口改为跳转 HTTPS，并添加 443 端口反代：
+
+```nginx
+server {
+    listen 80;
+    server_name jiafen.qiuzizhao.com;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name jiafen.qiuzizhao.com;
+    client_max_body_size 20m;
+
+    ssl_certificate     /etc/letsencrypt/live/jiafen.qiuzizhao.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/jiafen.qiuzizhao.com/privkey.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:5002;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_connect_timeout 15s;
+        proxy_send_timeout 300s;
+        proxy_read_timeout 300s;
+    }
+}
+```
+
+```bash
+sudo nginx -t && sudo systemctl reload nginx
+sudo certbot renew --dry-run
+```
+
+Certbot 会安排自动续期；HTTP 80 端口需要保持公网可访问，以便完成后续续期验证。
+
+### 第 7 步：Cloudflare DNS
+
+在 Cloudflare 将 JiaFen 子域名的 **A 记录**指向服务器公网 IP，并设为 **DNS only（灰云）**。灰云请求会绕过 Cloudflare，浏览器直接连接源站的 443 端口；源站必须提供匹配域名的公开可信证书。Cloudflare 的 Flexible / Full 模式不参与这条直连请求，因此这里不需要调整区域级 SSL/TLS 模式。灰云会公开源站 IP，且请求不经过 Cloudflare 的代理防护。
+
+如果以后要把 JiaFen 切回橙云，先为该主机名使用 **Full (strict)**，再开启代理。由于 HTTP 端口会跳转 HTTPS，使用 Flexible 回源会形成重定向循环；若同一区域还有其他橙云网站，应先确认它们的源站也支持 HTTPS，避免直接修改影响全区域的默认模式。
+
+浏览器和 App 均使用 `https://jiafen.qiuzizhao.com/`。
 
 ## 常用命令
 
