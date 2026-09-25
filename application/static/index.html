@@ -14,7 +14,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png?v=20260915">
   <link rel="icon" href="/favicon.ico?v=20260915" sizes="any">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=20260915">
-  <link rel="stylesheet" href="/style.css?v=20260925d">
+  <link rel="stylesheet" href="/style.css?v=20260925r">
 </head>
 <body>
 
@@ -45,10 +45,15 @@
     <header class="topbar">
       <div class="brand">课堂小组积分 <span id="sync-status" class="sync-status syncing" title="正在连接实时同步">同步中…</span></div>
       <div class="actions">
-        <button id="btn-classes" class="ghost">班级</button>
-        <button id="btn-export" class="ghost">导出备份</button>
-        <button id="btn-import" class="ghost">导入备份</button>
         <button id="btn-rewards" class="ghost" aria-pressed="false">奖励</button>
+        <button id="btn-classes" class="ghost">班级</button>
+        <div class="backup-wrap">
+          <button id="btn-backup" class="ghost" type="button" aria-expanded="false" aria-controls="backup-menu">备份 <span aria-hidden="true">▾</span></button>
+          <div id="backup-menu" class="backup-menu hidden">
+            <button id="btn-export" type="button">导出备份</button>
+            <button id="btn-import" type="button">导入备份</button>
+          </div>
+        </div>
         <button id="btn-voice" class="ghost" title="语音播报开关">🔈 语音播报</button>
         <button id="btn-projector" class="ghost">投屏模式</button>
         <button id="btn-account" class="ghost who-btn" title="账号设置">👤 <span id="who"></span></button>
@@ -62,12 +67,7 @@
           <button type="button" class="on" data-reward-mode="class" role="tab" aria-selected="true">按班级</button>
           <button type="button" data-reward-mode="pending" role="tab" aria-selected="false">待奖励</button>
         </div>
-        <form id="reward-settings" class="reward-settings" title="调整档位后，从各组历史最高分之后开始计算">
-          <label for="reward-step">每</label>
-          <input id="reward-step" type="number" min="1" max="10000" step="1" inputmode="numeric" aria-label="每多少分获得一次奖励机会">
-          <span>分一次</span>
-          <button id="reward-save" type="submit">保存</button>
-        </form>
+        <button id="reward-settings-open" class="ghost reward-settings-trigger" type="button" aria-haspopup="dialog" aria-controls="reward-settings-modal"><span aria-hidden="true">⚙</span> 设置</button>
       </div>
       <nav id="reward-class-nav" class="reward-class-nav" aria-label="选择班级"></nav>
       <div id="reward-content" class="reward-content"></div>
@@ -98,12 +98,12 @@
         <div id="class-score" class="class-score disabled" title="给本班每个小组同时加减分">
           <span class="cs-label">全班</span>
           <div class="cs-quick">
-            <button class="qbtn up" onclick="addClassScore(1)">+1</button>
-            <button class="qbtn up" onclick="addClassScore(2)">+2</button>
-            <button class="qbtn up" onclick="addClassScore(5)">+5</button>
-            <button class="qbtn down" onclick="addClassScore(-1)">-1</button>
-            <button class="qbtn down" onclick="addClassScore(-2)">-2</button>
-            <button class="qbtn down" onclick="addClassScore(-5)">-5</button>
+            <button class="qbtn up" data-delta="1" onclick="addClassScore(1)">+1</button>
+            <button class="qbtn up" data-delta="2" onclick="addClassScore(2)">+2</button>
+            <button class="qbtn up" data-delta="5" onclick="addClassScore(5)">+5</button>
+            <button class="qbtn down" data-delta="-1" onclick="addClassScore(-1)">-1</button>
+            <button class="qbtn down" data-delta="-2" onclick="addClassScore(-2)">-2</button>
+            <button class="qbtn down" data-delta="-5" onclick="addClassScore(-5)">-5</button>
           </div>
           <div class="cs-custom">
             <input type="number" id="class-amount" class="amount" placeholder="分值">
@@ -139,6 +139,62 @@
 
   <!-- 移动端班级弹窗背景 -->
   <div id="class-backdrop" class="class-backdrop"></div>
+
+  <!-- 奖励设置 -->
+  <div id="reward-settings-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="reward-settings-title">
+    <div class="modal-box reward-settings-box">
+      <div class="modal-head">
+        <h3 id="reward-settings-title">奖励设置</h3>
+        <button id="reward-settings-close" class="icon-btn" type="button" aria-label="关闭">✕</button>
+      </div>
+      <form id="reward-settings" class="reward-settings-form">
+        <div class="reward-step-row">
+          <label for="reward-step">每</label>
+          <input id="reward-step" type="number" min="1" max="10000" step="1" inputmode="numeric" aria-label="每多少分获得一次奖励机会">
+          <span>分一次</span>
+        </div>
+        <p class="reward-settings-note">修改后从各组最高分继续计算</p>
+        <p id="reward-settings-error" class="err" role="alert"></p>
+        <div class="modal-actions">
+          <button id="reward-settings-cancel" class="ghost" type="button">取消</button>
+          <button id="reward-save" class="primary" type="submit">保存</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 手动增加奖励机会 -->
+  <div id="reward-add-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="reward-add-title" aria-describedby="reward-add-detail">
+    <div class="modal-box reward-add-box">
+      <div class="modal-head">
+        <h3 id="reward-add-title">增加奖励机会</h3>
+        <button id="reward-add-close" class="icon-btn" type="button" aria-label="关闭">✕</button>
+      </div>
+      <form id="reward-add-form">
+        <p id="reward-add-detail" class="reward-add-detail"></p>
+        <label class="reward-add-label" for="reward-add-note">备注</label>
+        <input id="reward-add-note" type="text" maxlength="20" autocomplete="off" placeholder="例如：赠送" required>
+        <p id="reward-add-error" class="err" role="alert"></p>
+        <div class="modal-actions">
+          <button id="reward-add-cancel" class="ghost" type="button">取消</button>
+          <button id="reward-add-save" class="primary" type="submit">增加机会</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 奖励机会确认 -->
+  <div id="reward-confirm-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="reward-confirm-title" aria-describedby="reward-confirm-detail">
+    <div class="modal-box reward-confirm-box">
+      <h3 id="reward-confirm-title">确认完成奖励？</h3>
+      <p id="reward-confirm-detail" class="reward-confirm-detail"></p>
+      <p id="reward-confirm-error" class="err" role="alert"></p>
+      <div class="modal-actions">
+        <button id="reward-confirm-cancel" class="ghost" type="button">取消</button>
+        <button id="reward-confirm-accept" class="primary" type="button">确认完成</button>
+      </div>
+    </div>
+  </div>
 
   <!-- 清零确认弹窗 -->
   <div id="reset-modal" class="modal hidden">
@@ -230,6 +286,6 @@
     <div id="projector-board" class="projector-board"></div>
   </div>
 
-  <script src="/app.js?v=20260925c"></script>
+  <script src="/app.js?v=20260925r"></script>
 </body>
 </html>

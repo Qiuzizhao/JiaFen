@@ -18,6 +18,9 @@ const state = {
   rewardData: null,
   rewardMode: 'class',
   rewardClassId: null,
+  rewardConfirmId: null,
+  rewardConfirmCompleted: null,
+  rewardAddGroupId: null,
   rewardReturnY: 0,
   // 班级名单弹窗的状态（展开哪一行的菜单、批量导入面板是否打开等）
   rosterOpen: false,
@@ -62,9 +65,114 @@ function findClassOfGroup(gid) {
   return null;
 }
 
+function openRewardSettings() {
+  if (!state.rewardData) return;
+  $('#reward-step').value = state.rewardData.step;
+  $('#reward-settings-error').textContent = '';
+  $('#reward-settings-modal').classList.remove('hidden');
+  $('#reward-step').focus();
+  $('#reward-step').select();
+}
+
+function closeRewardSettings(restoreFocus = true) {
+  if ($('#reward-settings-modal').classList.contains('hidden')) return;
+  $('#reward-settings-modal').classList.add('hidden');
+  $('#reward-settings-error').textContent = '';
+  if (restoreFocus) $('#reward-settings-open').focus();
+}
+
+function findRewardOpportunity(oid) {
+  for (const cls of state.rewardData?.classes || []) {
+    for (const group of cls.groups) {
+      const opportunity = (group.opportunities || []).find(item => item.id === oid);
+      if (opportunity) return { cls, group, opportunity };
+    }
+  }
+  return null;
+}
+
+function openRewardConfirm(oid) {
+  const found = findRewardOpportunity(oid);
+  if (!found) return;
+  state.rewardConfirmId = oid;
+  state.rewardConfirmCompleted = !!found.opportunity.completed;
+  const source = found.opportunity.kind === 'manual' ? found.opportunity.note : `${found.opportunity.threshold} 分`;
+  $('#reward-confirm-title').textContent = state.rewardConfirmCompleted ? '确认恢复奖励机会？' : '确认完成奖励？';
+  $('#reward-confirm-detail').textContent = `${found.cls.name} ${found.group.name} · ${source}`;
+  $('#reward-confirm-accept').textContent = state.rewardConfirmCompleted ? '确认恢复' : '确认完成';
+  $('#reward-confirm-error').textContent = '';
+  $('#reward-confirm-modal').classList.remove('hidden');
+  $('#reward-confirm-accept').focus();
+}
+
+function openRewardAdd(gid) {
+  const cls = state.rewardData?.classes.find(c => c.groups.some(g => g.id === gid));
+  const group = cls?.groups.find(g => g.id === gid);
+  if (!group) return;
+  state.rewardAddGroupId = gid;
+  $('#reward-add-detail').textContent = `${cls.name} ${group.name}`;
+  $('#reward-add-note').value = '赠送';
+  $('#reward-add-error').textContent = '';
+  $('#reward-add-modal').classList.remove('hidden');
+  $('#reward-add-note').focus();
+  $('#reward-add-note').select();
+}
+
+function closeRewardAdd(restoreFocus = true) {
+  if ($('#reward-add-modal').classList.contains('hidden')) return;
+  const gid = state.rewardAddGroupId;
+  state.rewardAddGroupId = null;
+  $('#reward-add-modal').classList.add('hidden');
+  $('#reward-add-error').textContent = '';
+  if (restoreFocus) (document.querySelector(`.reward-add[data-reward-add="${gid}"]`) ||
+    document.querySelector('[data-reward-mode="class"]'))?.focus();
+}
+
+async function saveRewardAdd(event) {
+  event.preventDefault();
+  const gid = state.rewardAddGroupId;
+  const note = $('#reward-add-note').value.trim();
+  if (!gid) return;
+  if (!note || note.length > 20) {
+    $('#reward-add-error').textContent = '请输入 1 到 20 个字的备注';
+    $('#reward-add-note').focus();
+    return;
+  }
+  const button = $('#reward-add-save');
+  button.disabled = true;
+  $('#reward-add-error').textContent = '';
+  try {
+    await api(`/api/rewards/groups/${gid}/opportunities`, {
+      method: 'POST', body: { note, client: CLIENT_ID },
+    });
+    await refreshRewards();
+    closeRewardAdd();
+  } catch (e) { $('#reward-add-error').textContent = e.message; }
+  finally { button.disabled = false; }
+}
+
+function closeRewardConfirm(restoreFocus = true) {
+  if ($('#reward-confirm-modal').classList.contains('hidden')) return;
+  const oid = state.rewardConfirmId;
+  state.rewardConfirmId = null;
+  state.rewardConfirmCompleted = null;
+  $('#reward-confirm-modal').classList.add('hidden');
+  $('#reward-confirm-error').textContent = '';
+  if (restoreFocus) {
+    (document.querySelector(`.reward-token[data-opportunity="${oid}"]`) ||
+      document.querySelector('[data-reward-mode="pending"]'))?.focus();
+  }
+}
+
 async function toggleRewardsPage() {
+  closeBackupMenu();
   const opening = !state.rewardOpen;
   if (opening) state.rewardReturnY = window.scrollY;
+  else {
+    closeRewardSettings(false);
+    closeRewardConfirm(false);
+    closeRewardAdd(false);
+  }
   state.rewardOpen = !state.rewardOpen;
   $('#app').classList.toggle('reward-mode', state.rewardOpen);
   $('#layout')?.classList.toggle('hidden', state.rewardOpen);
@@ -88,6 +196,10 @@ async function refreshRewards() {
       state.rewardClassId = current ? current.id : (state.rewardData.classes[0]?.id || null);
     }
     renderRewardsPage();
+    if (state.rewardConfirmId) {
+      const current = findRewardOpportunity(state.rewardConfirmId);
+      if (!current || !!current.opportunity.completed !== state.rewardConfirmCompleted) closeRewardConfirm();
+    }
   } catch (e) {
     $('#reward-content').innerHTML = '<div class="reward-empty">奖励数据暂时无法加载</div>';
   }
@@ -95,25 +207,28 @@ async function refreshRewards() {
 
 function rewardGroupHTML(group, className = '') {
   const opportunities = group.opportunities || [];
-  const tokens = opportunities.length
-    ? opportunities.map(o => {
+  const name = className
+    ? `<span class="reward-card-class">${esc(className)}</span> <span class="reward-card-group">${esc(group.name)}</span>`
+    : `<span class="reward-card-group">${esc(group.name)}</span>`;
+  const tokens = opportunities.map(o => {
       const done = !!o.completed;
-      const label = `${o.threshold} 分奖励机会，${done ? '已完成' : '待奖励'}，点击切换状态`;
-      return `<button class="reward-token ${done ? 'completed' : 'available'}" data-opportunity="${o.id}" title="${label}" aria-label="${label}" aria-pressed="${done}">
+      const manual = o.kind === 'manual';
+      const source = manual ? o.note : `${o.threshold} 分`;
+      const label = `${source}${manual ? '' : '奖励机会'}，${done ? '已完成，点击确认恢复' : '待奖励，点击确认完成'}`;
+      return `<button class="reward-token ${manual ? 'manual' : ''} ${done ? 'completed' : 'available'}" data-opportunity="${o.id}" title="${esc(label)}" aria-label="${esc(label)}" aria-pressed="${done}">
         <span class="reward-token-disc" aria-hidden="true">✦</span>
-        <span class="reward-token-threshold">${o.threshold} 分</span>
+        <span class="reward-token-threshold">${esc(source)}</span>
       </button>`;
-    }).join('')
-    : '<span class="reward-card-empty"><span aria-hidden="true">✦</span> 暂未获得</span>';
-  return `<article class="reward-card" style="--group-color:${esc(group.color)}">
+    }).join('');
+  return `<article class="reward-card${className ? ' has-class' : ''}" style="--group-color:${esc(group.color)}">
     <div class="reward-card-top">
       <div class="reward-card-identity">
         <span class="reward-card-dot" aria-hidden="true"></span>
-        <div class="reward-card-names"><h3>${esc(group.name)}</h3>${className ? `<span>${esc(className)}</span>` : ''}</div>
+        <div class="reward-card-names"><h3>${name}</h3></div>
       </div>
       <div class="reward-card-score"><strong>${group.score}</strong><span>分</span></div>
     </div>
-    <div class="reward-card-tokens">${tokens}</div>
+    <div class="reward-card-tokens">${tokens}<button class="reward-add" type="button" data-reward-add="${group.id}" aria-label="给${esc(group.name)}增加奖励机会" title="增加奖励机会"><span aria-hidden="true">＋</span></button></div>
   </article>`;
 }
 
@@ -121,8 +236,7 @@ function renderRewardsPage() {
   const data = state.rewardData;
   if (!data) return;
   const stepInput = $('#reward-step');
-  if (document.activeElement !== stepInput) stepInput.value = data.step;
-  $('#reward-save').disabled = Number(stepInput.value) === Number(data.step);
+  if ($('#reward-settings-modal').classList.contains('hidden')) stepInput.value = data.step;
 
   const classNav = $('#reward-class-nav');
   classNav.innerHTML = data.classes.map(c => {
@@ -152,9 +266,7 @@ function renderRewardsPage() {
   }
   const waiting = data.classes.flatMap(c => c.groups
     .filter(g => (g.opportunities || []).some(o => !o.completed))
-    .map(g => ({ group: g, className: c.name,
-      pending: g.opportunities.filter(o => !o.completed).length })));
-  waiting.sort((a, b) => b.pending - a.pending);
+    .map(g => ({ group: g, className: c.name })));
   if (!waiting.length) {
     content.innerHTML = '<div class="reward-empty reward-empty-clear"><span aria-hidden="true">✦</span><strong>目前没有待奖励的小组</strong></div>';
     return;
@@ -166,31 +278,48 @@ function renderRewardsPage() {
 async function saveRewardStep(event) {
   event.preventDefault();
   const step = Number($('#reward-step').value);
-  if (state.rewardData && step === Number(state.rewardData.step)) return;
-  if (!Number.isInteger(step) || step < 1 || step > 10000) {
-    $('#reward-step').focus();
-    alert('档位必须是 1 到 10000 之间的整数');
+  if (state.rewardData && step === Number(state.rewardData.step)) {
+    closeRewardSettings();
     return;
   }
+  if (!Number.isInteger(step) || step < 1 || step > 10000) {
+    $('#reward-settings-error').textContent = '请输入 1 到 10000 之间的整数';
+    $('#reward-step').focus();
+    return;
+  }
+  $('#reward-settings-error').textContent = '';
   const button = $('#reward-save');
   button.disabled = true;
   try {
     await api('/api/rewards/settings', { method: 'PUT', body: { step, client: CLIENT_ID } });
     await refreshRewards();
-  } catch (e) { alert(e.message); }
+    closeRewardSettings();
+  } catch (e) { $('#reward-settings-error').textContent = e.message; }
   finally { button.disabled = false; }
 }
 
-async function toggleRewardOpportunity(oid, button) {
-  if (button.disabled) return;
+async function updateRewardOpportunity(oid, expectedCompleted) {
+  await api(`/api/rewards/opportunities/${oid}/toggle`, {
+    method: 'POST', body: { client: CLIENT_ID, expected_completed: expectedCompleted },
+  });
+  await refreshRewards();
+}
+
+async function confirmRewardOpportunity() {
+  const oid = state.rewardConfirmId;
+  const expectedCompleted = state.rewardConfirmCompleted;
+  const button = $('#reward-confirm-accept');
+  if (!oid || button.disabled) return;
+  const current = findRewardOpportunity(oid);
+  if (!current || !!current.opportunity.completed !== expectedCompleted) { closeRewardConfirm(); return; }
   button.disabled = true;
   try {
-    await api(`/api/rewards/opportunities/${oid}/toggle`, {
-      method: 'POST', body: { client: CLIENT_ID },
-    });
+    await updateRewardOpportunity(oid, expectedCompleted);
+    closeRewardConfirm();
+  } catch (e) {
+    $('#reward-confirm-error').textContent = e.message;
     await refreshRewards();
-  } catch (e) { alert(e.message); }
-  finally { button.disabled = false; }
+  } finally { button.disabled = false; }
 }
 
 function localStamp() {
@@ -364,7 +493,7 @@ function groupCard(g, ranks) {
     </div>
     <div class="gscore">${g.score}</div>
     <div class="quick">
-      ${q.map(([v, l]) => `<button class="qbtn ${v > 0 ? 'up' : 'down'}" onclick="addScore(${g.id},${v})">${l}</button>`).join('')}
+      ${q.map(([v, l]) => `<button class="qbtn ${v > 0 ? 'up' : 'down'}" data-delta="${v}" onclick="addScore(${g.id},${v})">${l}</button>`).join('')}
     </div>
     <div class="custom">
       <div class="row">
@@ -764,6 +893,20 @@ async function delGroup(id) {
 }
 
 // ---------------- 备份 ----------------
+function closeBackupMenu(restoreFocus = false) {
+  const menu = $('#backup-menu');
+  if (menu.classList.contains('hidden')) return;
+  menu.classList.add('hidden');
+  $('#btn-backup').setAttribute('aria-expanded', 'false');
+  if (restoreFocus) $('#btn-backup').focus();
+}
+
+function toggleBackupMenu() {
+  const opening = $('#backup-menu').classList.contains('hidden');
+  $('#backup-menu').classList.toggle('hidden', !opening);
+  $('#btn-backup').setAttribute('aria-expanded', String(opening));
+}
+
 async function doExport() {
   try {
     const data = await api('/api/export');
@@ -2483,10 +2626,29 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   renderVoiceButtons();
   $('#btn-rewards').addEventListener('click', toggleRewardsPage);
-  $('#reward-settings').addEventListener('submit', saveRewardStep);
-  $('#reward-step').addEventListener('input', e => {
-    $('#reward-save').disabled = Number(e.target.value) === Number(state.rewardData?.step);
+  $('#reward-settings-open').addEventListener('click', openRewardSettings);
+  $('#reward-settings-close').addEventListener('click', () => closeRewardSettings());
+  $('#reward-settings-cancel').addEventListener('click', () => closeRewardSettings());
+  $('#reward-settings-modal').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeRewardSettings();
   });
+  $('#reward-confirm-cancel').addEventListener('click', () => closeRewardConfirm());
+  $('#reward-confirm-accept').addEventListener('click', confirmRewardOpportunity);
+  $('#reward-confirm-modal').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeRewardConfirm();
+  });
+  $('#reward-add-cancel').addEventListener('click', () => closeRewardAdd());
+  $('#reward-add-close').addEventListener('click', () => closeRewardAdd());
+  $('#reward-add-modal').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeRewardAdd();
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && !$('#reward-settings-modal').classList.contains('hidden')) closeRewardSettings();
+    if (e.key === 'Escape' && !$('#reward-confirm-modal').classList.contains('hidden')) closeRewardConfirm();
+    if (e.key === 'Escape' && !$('#reward-add-modal').classList.contains('hidden')) closeRewardAdd();
+  });
+  $('#reward-settings').addEventListener('submit', saveRewardStep);
+  $('#reward-add-form').addEventListener('submit', saveRewardAdd);
   $('#reward-class-nav').addEventListener('click', e => {
     const button = e.target.closest('[data-reward-class]');
     if (!button) return;
@@ -2500,11 +2662,21 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
   $('#reward-content').addEventListener('click', e => {
+    const addButton = e.target.closest('.reward-add[data-reward-add]');
+    if (addButton) { openRewardAdd(Number(addButton.dataset.rewardAdd)); return; }
     const button = e.target.closest('.reward-token[data-opportunity]');
-    if (button) toggleRewardOpportunity(Number(button.dataset.opportunity), button);
+    if (!button) return;
+    openRewardConfirm(Number(button.dataset.opportunity));
   });
-  $('#btn-export').addEventListener('click', doExport);
-  $('#btn-import').addEventListener('click', doImport);
+  $('#btn-backup').addEventListener('click', toggleBackupMenu);
+  $('#btn-export').addEventListener('click', () => { closeBackupMenu(true); doExport(); });
+  $('#btn-import').addEventListener('click', () => { closeBackupMenu(true); doImport(); });
+  document.addEventListener('pointerdown', e => {
+    if (!e.target.closest('.backup-wrap')) closeBackupMenu();
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && !$('#backup-menu').classList.contains('hidden')) closeBackupMenu(true);
+  });
   $('#import-file').addEventListener('change', handleImportFile);
   $('#btn-projector').addEventListener('click', openProjector);
   $('#projector-close').addEventListener('click', closeProjector);

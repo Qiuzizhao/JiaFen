@@ -175,10 +175,14 @@ def init_db():
         CREATE TABLE IF NOT EXISTS reward_opportunities (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
-            threshold INTEGER NOT NULL,
+            kind TEXT NOT NULL DEFAULT 'score' CHECK(kind IN ('score', 'manual')),
+            threshold INTEGER,
+            note TEXT NOT NULL DEFAULT '',
             completed INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
             completed_at TEXT,
+            CHECK((kind='score' AND threshold IS NOT NULL AND threshold>0 AND note='')
+               OR (kind='manual' AND threshold IS NULL AND length(trim(note)) BETWEEN 1 AND 20)),
             UNIQUE(group_id, threshold)
         );
         """
@@ -199,6 +203,32 @@ def init_db():
             )
             """
         )
+    # 奖励机会增加“手动赠送”：积分档位保留 threshold，手动机会使用备注。
+    ocols = {r[1] for r in conn.execute("PRAGMA table_info(reward_opportunities)").fetchall()}
+    if "kind" not in ocols:
+        conn.execute("ALTER TABLE reward_opportunities RENAME TO reward_opportunities_legacy")
+        conn.execute(
+            """CREATE TABLE reward_opportunities (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+                kind TEXT NOT NULL DEFAULT 'score' CHECK(kind IN ('score', 'manual')),
+                threshold INTEGER,
+                note TEXT NOT NULL DEFAULT '',
+                completed INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+                completed_at TEXT,
+                CHECK((kind='score' AND threshold IS NOT NULL AND threshold>0 AND note='')
+                   OR (kind='manual' AND threshold IS NULL AND length(trim(note)) BETWEEN 1 AND 20)),
+                UNIQUE(group_id, threshold)
+            )"""
+        )
+        conn.execute(
+            "INSERT INTO reward_opportunities "
+            "(id, group_id, kind, threshold, note, completed, created_at, completed_at) "
+            "SELECT id, group_id, 'score', threshold, '', completed, created_at, completed_at "
+            "FROM reward_opportunities_legacy"
+        )
+        conn.execute("DROP TABLE reward_opportunities_legacy")
     # 迁移：早期容器时区为 UTC，历史时间戳整体 +8 小时校正为北京时间（仅执行一次）
     if conn.execute("SELECT 1 FROM meta WHERE key='tz_fix_v1'").fetchone() is None:
         conn.execute("UPDATE transactions SET created_at = datetime(created_at, '+8 hours')")
@@ -1158,8 +1188,9 @@ def list_rewards():
         group_result = []
         for group in groups:
             opportunities = db.execute(
-                "SELECT id, threshold, completed, created_at, completed_at "
-                "FROM reward_opportunities WHERE group_id=? ORDER BY threshold, id",
+                "SELECT id, kind, threshold, note, completed, created_at, completed_at "
+                "FROM reward_opportunities WHERE group_id=? "
+                "ORDER BY CASE kind WHEN 'score' THEN 0 ELSE 1 END, threshold, id",
                 (group["id"],),
             ).fetchall()
             group_result.append({
@@ -1168,6 +1199,31 @@ def list_rewards():
             })
         result.append({**dict(cls), "groups": group_result})
     return jsonify({"step": reward_step_for_user(db, u["id"]), "classes": result})
+
+
+@app.route("/api/rewards/groups/<int:gid>/opportunities", methods=["POST"])
+@login_required
+def add_manual_reward_opportunity(gid):
+    data = request.get_json(silent=True) or {}
+    note = data.get("note", "赠送")
+    if not isinstance(note, str) or not 1 <= len(note.strip()) <= 20:
+        return jsonify({"error": "备注须为 1 到 20 个字"}), 400
+    note = note.strip()
+    db = get_db()
+    u = current_user()
+    group = db.execute(
+        "SELECT g.id FROM groups g JOIN classes c ON c.id=g.class_id "
+        "WHERE g.id=? AND c.owner_id=?", (gid, u["id"])
+    ).fetchone()
+    if not group:
+        return jsonify({"error": "小组不存在"}), 404
+    cur = db.execute(
+        "INSERT INTO reward_opportunities(group_id, kind, threshold, note) "
+        "VALUES(?, 'manual', NULL, ?)", (gid, note)
+    )
+    db.commit()
+    broadcast({"kind": "rewards", "client": (data.get("client") or "")[:32]})
+    return jsonify({"ok": True, "id": cur.lastrowid, "note": note}), 201
 
 
 @app.route("/api/rewards/settings", methods=["PUT"])
@@ -1217,11 +1273,24 @@ def toggle_reward_opportunity(oid):
     ).fetchone()
     if not opportunity:
         return jsonify({"error": "奖励机会不存在"}), 404
+    expected = data.get("expected_completed")
+    if type(expected) is bool and bool(opportunity["completed"]) != expected:
+        return jsonify({"error": "奖励机会状态已变化，请刷新后重试"}), 409
     completed = 0 if opportunity["completed"] else 1
-    db.execute(
-        "UPDATE reward_opportunities SET completed=?, completed_at=? WHERE id=?",
-        (completed, datetime.now().strftime("%Y-%m-%d %H:%M:%S") if completed else None, oid),
-    )
+    if type(expected) is bool:
+        updated = db.execute(
+            "UPDATE reward_opportunities SET completed=?, completed_at=? "
+            "WHERE id=? AND completed=?",
+            (completed, datetime.now().strftime("%Y-%m-%d %H:%M:%S") if completed else None,
+             oid, int(expected)),
+        )
+        if updated.rowcount != 1:
+            return jsonify({"error": "奖励机会状态已变化，请刷新后重试"}), 409
+    else:
+        db.execute(
+            "UPDATE reward_opportunities SET completed=?, completed_at=? WHERE id=?",
+            (completed, datetime.now().strftime("%Y-%m-%d %H:%M:%S") if completed else None, oid),
+        )
     db.commit()
     broadcast({"kind": "rewards", "client": (data.get("client") or "")[:32]})
     return jsonify({"ok": True, "completed": bool(completed)})
@@ -1272,8 +1341,9 @@ def export_data():
             ).fetchone()
             item["reward_max_score"] = int(progress["max_score"]) if progress else int(group["score"])
             item["reward_opportunities"] = [dict(row) for row in db.execute(
-                "SELECT threshold, completed, created_at, completed_at "
-                "FROM reward_opportunities WHERE group_id=? ORDER BY threshold", (group["id"],)
+                "SELECT kind, threshold, note, completed, created_at, completed_at "
+                "FROM reward_opportunities WHERE group_id=? "
+                "ORDER BY CASE kind WHEN 'score' THEN 0 ELSE 1 END, threshold, id", (group["id"],)
             ).fetchall()]
             group_data.append(item)
         students = db.execute(
@@ -1289,10 +1359,10 @@ def export_data():
                 "students": [dict(s) for s in students],
             }
         )
-    # version 3：包含奖励档位、机会状态和进度；旧版备份仍可导入。
+    # version 4：增加手动机会及备注；旧版备份仍可导入。
     return jsonify(
         {
-            "version": 3,
+            "version": 4,
             "exported_at": datetime.now().isoformat(),
             "reward_step": reward_step_for_user(db, u["id"]),
             "classes": data,
@@ -1352,17 +1422,24 @@ def import_data():
             if "reward_opportunities" in g:
                 db.execute("DELETE FROM reward_opportunities WHERE group_id=?", (gcur.lastrowid,))
                 for opportunity in g.get("reward_opportunities") or []:
-                    try:
-                        threshold = int(opportunity.get("threshold", 0))
-                    except (TypeError, ValueError):
-                        continue
-                    if threshold <= 0:
-                        continue
+                    if opportunity.get("kind", "score") == "manual":
+                        note = opportunity.get("note", "")
+                        if not isinstance(note, str) or not 1 <= len(note.strip()) <= 20:
+                            continue
+                        kind, threshold, note = "manual", None, note.strip()
+                    else:
+                        try:
+                            threshold = int(opportunity.get("threshold", 0))
+                        except (TypeError, ValueError):
+                            continue
+                        if threshold <= 0:
+                            continue
+                        kind, note = "score", ""
                     completed = 1 if opportunity.get("completed") else 0
                     db.execute(
                         "INSERT OR IGNORE INTO reward_opportunities "
-                        "(group_id, threshold, completed, created_at, completed_at) VALUES(?,?,?,?,?)",
-                        (gcur.lastrowid, threshold, completed,
+                        "(group_id, kind, threshold, note, completed, created_at, completed_at) VALUES(?,?,?,?,?,?,?)",
+                        (gcur.lastrowid, kind, threshold, note, completed,
                          opportunity.get("created_at") or datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                          opportunity.get("completed_at") if completed else None),
                     )

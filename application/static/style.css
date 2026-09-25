@@ -153,6 +153,13 @@ input.masked { -webkit-text-security: disc; }
 .sync-status.syncing { background: #fef3c7; color: #b45309; }
 .sync-status.offline { background: #f1f5f9; color: #64748b; }
 .actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.backup-wrap { position: relative; flex: none; }
+.backup-wrap > .ghost { display: inline-flex; align-items: center; gap: 6px; }
+.backup-wrap > .ghost span { font-size: 11px; }
+.backup-wrap > .ghost[aria-expanded="true"] { background: #e3edff; color: var(--brand-dark); }
+.backup-menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 40; min-width: 142px; padding: 4px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); box-shadow: 0 10px 24px rgba(17, 24, 39, .14); }
+.backup-menu button { display: block; width: 100%; min-height: 40px; padding: 9px 11px; background: transparent; color: var(--text); text-align: left; white-space: nowrap; font-size: 13px; }
+.backup-menu button:hover, .backup-menu button:focus-visible { background: #eef4ff; color: var(--brand-dark); }
 
 /* 布局 */
 .layout {
@@ -698,12 +705,23 @@ html { -webkit-text-size-adjust: 100%; }
   .main, .sidebar, .right .panel { padding: 12px; }
   .main { min-height: 0; }
   .board-head { flex-direction: column; align-items: stretch; gap: 8px; }
+  .board-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .board-actions #btn-reset { display: none; }
+  .board-actions button { white-space: nowrap; }
   .board { grid-template-columns: 1fr; gap: 12px; }
+  .group-card { gap: 14px; padding: 16px; }
+  .group-card .group-head .icon-btn,
+  .group-card .custom,
+  .group-card .school-rank,
+  .group-card .quick .qbtn:not([data-delta="1"]):not([data-delta="-1"]) { display: none; }
+  .group-card .gscore { padding: 2px 0; font-size: 42px; line-height: 1.1; }
+  .group-card .quick { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .group-card .quick .qbtn { min-height: 52px; border-radius: 11px; font-size: 20px; }
   .class-score { gap: 6px; padding: 10px; }
-  .class-score .cs-quick { flex: 1 1 100%; }
+  .class-score .cs-quick { flex: 1 1 0; }
   .class-score .cs-quick .qbtn { flex: 1; min-width: 0; }
-  .class-score .cs-custom { flex: 1 1 100%; margin-left: 0; }
-  .class-score .cs-custom input { flex: 1; width: auto; }
+  .class-score .cs-quick .qbtn:not([data-delta="1"]):not([data-delta="-1"]),
+  .class-score .cs-custom { display: none; }
   .gscore { font-size: 34px; }
   input, .custom input { font-size: 16px; }
   .icon-btn { width: 32px; height: 32px; font-size: 16px; }
@@ -723,7 +741,7 @@ html { -webkit-text-size-adjust: 100%; }
   .proj-tools .close-btn { padding: 8px 12px; font-size: 14px; }
   /* 顶部操作：隐藏导出/导入；显示“班级”按钮 */
   #btn-classes { display: inline-flex; }
-  #btn-export, #btn-import { display: none; }
+  .backup-wrap { display: none; }
   .class-close { display: inline-flex; }
   /* 班级板块改为点击按钮后弹出的窗口 */
   .sidebar {
@@ -843,9 +861,11 @@ html { -webkit-text-size-adjust: 100%; }
 }
 
 /* 奖励 */
-#btn-rewards { background: #e3edff; color: var(--brand-dark); font-weight: 600; }
-#btn-rewards:hover { background: #d3e2ff; }
+#btn-rewards { background: #dc2626; color: #fff; font-weight: 700; box-shadow: 0 2px 8px rgba(220, 38, 38, .24); }
+#btn-rewards:hover { background: #b91c1c; }
+#btn-rewards:focus-visible { outline: 2px solid #dc2626; outline-offset: 2px; }
 #app.reward-mode .actions button:not(#btn-rewards) { display: none; }
+#app.reward-mode .backup-wrap { display: none; }
 #app.reward-mode .topbar { position: sticky; top: 0; z-index: 20; }
 #app.reward-mode #btn-rewards::before { content: '←'; margin-right: 6px; font-size: 16px; }
 .rewards-page { max-width: 1160px; margin: 0 auto; padding: 24px 20px 64px; }
@@ -854,24 +874,32 @@ html { -webkit-text-size-adjust: 100%; }
 .reward-tabs button { min-width: 88px; padding: 9px 16px; border-radius: 8px; background: transparent; color: var(--muted); font-size: 13px; font-weight: 600; }
 .reward-tabs button.on { background: #e3edff; color: var(--brand-dark); }
 .reward-tabs button:focus-visible, .reward-class-chip:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
-.reward-settings {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 44px;
-  padding: 4px 5px 4px 14px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--card);
-  color: var(--muted);
-  font-size: 13px;
-  font-weight: 600;
-}
-.reward-settings input { width: 50px; padding: 5px 1px; border: 0; border-bottom: 1px solid transparent; border-radius: 0; color: var(--text); font-size: 16px; font-weight: 700; text-align: center; }
-.reward-settings input:focus { border-bottom-color: var(--brand); }
-.reward-settings button { margin-left: 7px; padding: 8px 13px; border-radius: 8px; background: var(--brand); color: #fff; font-size: 12px; font-weight: 600; }
-.reward-settings button:hover:not(:disabled) { background: var(--brand-dark); }
-.reward-settings button:disabled { background: #eef1f7; color: #a0aaba; cursor: default; transition: none; }
+.reward-settings-trigger { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 40px; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.reward-settings-trigger span { font-size: 17px; line-height: 1; }
+.reward-settings-box { width: min(340px, 100%); }
+.reward-settings-box .modal-head h3 { margin: 0; }
+.reward-settings-form { margin-top: 20px; }
+.reward-step-row { display: flex; align-items: center; gap: 10px; color: var(--text); font-size: 15px; font-weight: 600; }
+.reward-step-row input { width: 84px; padding: 10px; font-size: 18px; font-weight: 700; text-align: center; -moz-appearance: textfield; }
+.reward-step-row input::-webkit-inner-spin-button, .reward-step-row input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.reward-settings-box .reward-settings-note { margin: 12px 0 0; font-size: 12px; }
+.reward-settings-box .err { margin: 8px 0 0; font-size: 12px; }
+.reward-settings-box .err:empty { display: none; }
+.reward-settings-form .modal-actions { margin-top: 20px; }
+.reward-settings-form .primary:disabled { background: #eef1f7; color: #a0aaba; cursor: default; transition: none; }
+.reward-confirm-box .reward-confirm-detail { margin: 8px 0 0; color: var(--text); font-size: 15px; font-weight: 600; }
+.reward-confirm-box .err { margin: 8px 0 0; font-size: 12px; }
+.reward-confirm-box .err:empty { display: none; }
+.reward-confirm-box .modal-actions { margin-top: 20px; }
+.reward-confirm-box .primary:disabled { opacity: .6; cursor: default; }
+.reward-add-box { width: min(340px, 100%); }
+.reward-add-detail { margin: 12px 0 17px; color: var(--text); font-size: 15px; font-weight: 650; }
+.reward-add-label { display: block; margin-bottom: 7px; color: var(--muted); font-size: 12px; font-weight: 600; }
+.reward-add-box input { width: 100%; }
+.reward-add-box .err { margin: 8px 0 0; font-size: 12px; }
+.reward-add-box .err:empty { display: none; }
+.reward-add-box .modal-actions { margin-top: 20px; }
+.reward-add-box .primary:disabled { opacity: .6; cursor: default; }
 .reward-class-nav { display: flex; gap: 8px; overflow-x: auto; padding: 2px 1px 13px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
 .reward-class-nav::-webkit-scrollbar { display: none; }
 .reward-class-chip { display: inline-flex; align-items: center; gap: 8px; flex: none; padding: 8px 13px; border: 1px solid var(--line); border-radius: 10px; background: #f6f8fc; color: var(--text); font-size: 12px; font-weight: 600; white-space: nowrap; }
@@ -886,7 +914,7 @@ html { -webkit-text-size-adjust: 100%; }
 .reward-card {
   position: relative;
   min-width: 0;
-  min-height: 158px;
+  min-height: 145px;
   overflow: hidden;
   padding: 20px 20px 17px;
   border: 1px solid var(--line);
@@ -896,15 +924,16 @@ html { -webkit-text-size-adjust: 100%; }
   box-shadow: var(--shadow);
 }
 .reward-card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; min-height: 40px; }
-.reward-card-identity { display: flex; align-items: flex-start; gap: 9px; min-width: 0; padding-top: 5px; }
+.reward-card-identity { display: flex; flex: 1; align-items: flex-start; gap: 9px; min-width: 0; padding-top: 5px; }
 .reward-card-dot { width: 14px; height: 14px; flex: none; margin-top: 2px; border-radius: 50%; background: var(--group-color, #5B9BD5); }
-.reward-card-names { min-width: 0; }
-.reward-card-names h3 { overflow: hidden; margin: 0; color: var(--text); font-size: 16px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.reward-card-names > span { display: block; overflow: hidden; margin-top: 3px; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.reward-card-names { flex: 1; min-width: 0; }
+.reward-card-names h3 { display: flex; align-items: baseline; gap: 8px; overflow: hidden; margin: 0; color: var(--text); font-size: 16px; font-weight: 600; white-space: nowrap; }
+.reward-card-class { min-width: 0; overflow: hidden; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.reward-card-group { flex: none; }
 .reward-card-score { display: flex; align-items: baseline; gap: 3px; flex: none; color: var(--text); font-variant-numeric: tabular-nums; }
 .reward-card-score strong { font-size: 28px; font-weight: 800; line-height: 1.1; }
 .reward-card-score span { color: var(--muted); font-size: 11px; }
-.reward-card-tokens { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 8px; min-height: 61px; margin-top: 17px; padding-top: 14px; border-top: 1px solid var(--line); }
+.reward-card-tokens { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 8px; min-height: 61px; margin-top: 13px; }
 .reward-token { display: inline-flex; width: 51px; min-height: 61px; flex: none; flex-direction: column; align-items: center; gap: 6px; padding: 0; background: transparent; color: var(--brand-dark); }
 .reward-token:hover { background: transparent; }
 .reward-token:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
@@ -914,8 +943,18 @@ html { -webkit-text-size-adjust: 100%; }
 .reward-token.completed .reward-token-disc { background: #cbd5e1; color: #fff; }
 .reward-token.completed:hover .reward-token-disc { background: #b9c6d6; }
 .reward-token-threshold { font-size: 11px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.reward-card-empty { display: inline-flex; align-items: center; gap: 9px; color: var(--muted); font-size: 12px; }
-.reward-card-empty span { display: grid; width: 42px; height: 42px; place-items: center; border: 1px dashed var(--line); border-radius: 10px; color: #cbd5e1; font-size: 20px; }
+.reward-token.manual { width: 60px; color: #b76a00; }
+.reward-token.manual .reward-token-disc { background: #f59e0b; }
+.reward-token.manual:hover .reward-token-disc { background: #d97706; }
+.reward-token.manual.completed { color: var(--muted); }
+.reward-token.manual.completed .reward-token-disc { background: #cbd5e1; }
+.reward-token.manual.completed:hover .reward-token-disc { background: #b9c6d6; }
+.reward-token.manual .reward-token-threshold { max-width: 60px; overflow: hidden; text-overflow: ellipsis; }
+.reward-add { display: inline-flex; width: 51px; height: 42px; flex: none; align-items: center; justify-content: center; padding: 0; background: transparent; color: var(--muted); }
+.reward-add:hover { background: transparent; color: var(--brand-dark); }
+.reward-add:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.reward-add > span { display: grid; width: 42px; height: 42px; place-items: center; border: 1px dashed #cbd5e1; border-radius: 10px; color: #94a3b8; font-size: 22px; line-height: 1; }
+.reward-add:hover > span { border-color: var(--brand); color: var(--brand); }
 .reward-empty { display: flex; min-height: 170px; align-items: center; justify-content: center; padding: 30px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); color: var(--muted); text-align: center; font-size: 14px; }
 .reward-empty-clear { flex-direction: column; gap: 7px; }
 .reward-empty-clear span { color: var(--brand); font-size: 28px; }
@@ -925,13 +964,13 @@ html { -webkit-text-size-adjust: 100%; }
   #app.reward-mode .actions { width: auto; flex: none; margin-left: auto; overflow: visible; padding-bottom: 0; }
   .rewards-page { padding: 14px 12px 38px; }
   .reward-controlbar { gap: 10px; margin: 0 0 12px; }
-  .reward-tabs { display: grid; width: 100%; grid-template-columns: 1fr 1fr; }
-  .reward-tabs button { min-height: 38px; }
-  .reward-settings { width: 100%; min-height: 44px; }
-  .reward-settings button { margin-left: auto; }
+  .reward-tabs { display: grid; flex: 1; grid-template-columns: 1fr 1fr; }
+  .reward-tabs button { min-width: 0; min-height: 38px; }
+  .reward-settings-trigger { flex: none; }
   .reward-class-nav { padding-bottom: 13px; }
   .reward-section-head { margin: 5px 1px 12px; }
   .reward-grid { grid-template-columns: minmax(0, 1fr); gap: 11px; }
   .reward-card { min-height: 150px; padding: 18px 17px 15px; }
+  .reward-card.has-class .reward-card-names h3 { gap: 6px; font-size: 14px; }
   .reward-card-tokens { gap: 6px; }
 }
