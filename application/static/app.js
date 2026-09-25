@@ -14,6 +14,11 @@ const state = {
   dragActive: false,
   pendingRefresh: false,
   leaderboardMode: 'class',
+  rewardOpen: false,
+  rewardData: null,
+  rewardMode: 'class',
+  rewardClassId: null,
+  rewardReturnY: 0,
   // 班级名单弹窗的状态（展开哪一行的菜单、批量导入面板是否打开等）
   rosterOpen: false,
   rosterMenu: null,
@@ -56,6 +61,146 @@ function findClassOfGroup(gid) {
   }
   return null;
 }
+
+async function toggleRewardsPage() {
+  const opening = !state.rewardOpen;
+  if (opening) state.rewardReturnY = window.scrollY;
+  state.rewardOpen = !state.rewardOpen;
+  $('#app').classList.toggle('reward-mode', state.rewardOpen);
+  $('#layout')?.classList.toggle('hidden', state.rewardOpen);
+  $('#rewards-page').classList.toggle('hidden', !state.rewardOpen);
+  $('#btn-rewards').textContent = state.rewardOpen ? '退出奖励' : '奖励';
+  $('#btn-rewards').setAttribute('aria-pressed', String(state.rewardOpen));
+  if (!state.rewardOpen) {
+    window.scrollTo(0, state.rewardReturnY);
+    return;
+  }
+  window.scrollTo(0, 0);
+  await refreshRewards();
+}
+
+async function refreshRewards() {
+  if (!state.rewardOpen) return;
+  try {
+    state.rewardData = await api('/api/rewards');
+    if (!state.rewardClassId || !state.rewardData.classes.some(c => c.id === state.rewardClassId)) {
+      const current = state.rewardData.classes.find(c => c.id === state.currentClassId);
+      state.rewardClassId = current ? current.id : (state.rewardData.classes[0]?.id || null);
+    }
+    renderRewardsPage();
+  } catch (e) {
+    $('#reward-content').innerHTML = '<div class="reward-empty">奖励数据暂时无法加载</div>';
+  }
+}
+
+function rewardGroupHTML(group, step) {
+  const opportunities = group.opportunities || [];
+  const pending = opportunities.filter(o => !o.completed).length;
+  const maxScore = Math.max(0, Number(group.max_score) || 0);
+  const next = (Math.floor(maxScore / step) + 1) * step;
+  const progress = maxScore % step / step * 100;
+  const tokens = opportunities.length
+    ? opportunities.map(o => {
+      const done = !!o.completed;
+      const label = `${o.threshold} 分奖励机会，${done ? '已完成' : '待奖励'}，点击切换状态`;
+      return `<button class="reward-token ${done ? 'completed' : 'available'}" data-opportunity="${o.id}" title="${label}" aria-label="${label}" aria-pressed="${done}">
+        <span class="reward-token-star" aria-hidden="true">✦</span>
+        <span class="reward-token-threshold">${o.threshold}</span>
+        ${done ? '<span class="reward-token-check" aria-hidden="true">✓</span>' : ''}
+      </button>`;
+    }).join('')
+    : '<span class="reward-no-tokens">暂无机会</span>';
+  return `<article class="reward-group" data-pending="${pending}" style="--group-color:${esc(group.color)}">
+    <div class="reward-group-main">
+      <span class="reward-group-dot"></span>
+      <span class="reward-group-name">${esc(group.name)}</span>
+      <span class="reward-group-score">${group.score}<small>分</small></span>
+    </div>
+    <div class="reward-tokens">${tokens}</div>
+    <div class="reward-next"><div class="reward-progress"><span style="width:${progress}%"></span></div><span>下一档 ${next} 分</span></div>
+  </article>`;
+}
+
+function renderRewardsPage() {
+  const data = state.rewardData;
+  if (!data) return;
+  const allGroups = data.classes.flatMap(c => c.groups);
+  const pendingCount = allGroups.reduce((sum, g) => sum + (g.opportunities || []).filter(o => !o.completed).length, 0);
+  const completedCount = allGroups.reduce((sum, g) => sum + (g.opportunities || []).filter(o => o.completed).length, 0);
+  $('#reward-pending-count').textContent = pendingCount;
+  $('#reward-summary').innerHTML = `<span class="reward-summary-pending">${pendingCount} 待奖励</span><span>${completedCount} 已完成</span>`;
+  const stepInput = $('#reward-step');
+  if (document.activeElement !== stepInput) stepInput.value = data.step;
+
+  const select = $('#reward-class-select');
+  select.innerHTML = data.classes.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  select.value = String(state.rewardClassId || '');
+  select.classList.toggle('hidden', state.rewardMode !== 'class' || data.classes.length < 2);
+  document.querySelectorAll('[data-reward-mode]').forEach(button => {
+    const active = button.dataset.rewardMode === state.rewardMode;
+    button.classList.toggle('on', active);
+    button.setAttribute('aria-selected', String(active));
+  });
+
+  const content = $('#reward-content');
+  if (!data.classes.length) {
+    content.innerHTML = '<div class="reward-empty">先创建班级和小组</div>';
+    return;
+  }
+  if (state.rewardMode === 'class') {
+    const cls = data.classes.find(c => c.id === state.rewardClassId) || data.classes[0];
+    if (!cls) { content.innerHTML = '<div class="reward-empty">暂无班级</div>'; return; }
+    state.rewardClassId = cls.id;
+    const pending = cls.groups.reduce((n, g) => n + (g.opportunities || []).filter(o => !o.completed).length, 0);
+    content.innerHTML = `<section class="reward-class-section">
+      <header class="reward-class-head"><h2>${esc(cls.name)}</h2><span>${pending} 待奖励</span></header>
+      ${cls.groups.length ? `<div class="reward-groups">${cls.groups.map(g => rewardGroupHTML(g, data.step)).join('')}</div>` : '<div class="reward-empty">这个班级还没有小组</div>'}
+    </section>`;
+    return;
+  }
+  const waiting = data.classes.map(c => ({
+    ...c,
+    groups: c.groups.filter(g => (g.opportunities || []).some(o => !o.completed)),
+  })).filter(c => c.groups.length);
+  if (!waiting.length) {
+    content.innerHTML = '<div class="reward-empty reward-empty-clear"><span>✦</span><strong>目前没有待奖励的小组</strong></div>';
+    return;
+  }
+  content.innerHTML = waiting.map(c => `<section class="reward-class-section">
+    <header class="reward-class-head"><h2>${esc(c.name)}</h2><span>${c.groups.length} 个小组</span></header>
+    <div class="reward-groups">${c.groups.map(g => rewardGroupHTML(g, data.step)).join('')}</div>
+  </section>`).join('');
+}
+
+async function saveRewardStep(event) {
+  event.preventDefault();
+  const step = Number($('#reward-step').value);
+  if (!Number.isInteger(step) || step < 1 || step > 10000) {
+    $('#reward-step').focus();
+    alert('档位必须是 1 到 10000 之间的整数');
+    return;
+  }
+  const button = $('#reward-save');
+  button.disabled = true;
+  try {
+    await api('/api/rewards/settings', { method: 'PUT', body: { step, client: CLIENT_ID } });
+    await refreshRewards();
+  } catch (e) { alert(e.message); }
+  finally { button.disabled = false; }
+}
+
+async function toggleRewardOpportunity(oid, button) {
+  if (button.disabled) return;
+  button.disabled = true;
+  try {
+    await api(`/api/rewards/opportunities/${oid}/toggle`, {
+      method: 'POST', body: { client: CLIENT_ID },
+    });
+    await refreshRewards();
+  } catch (e) { alert(e.message); }
+  finally { button.disabled = false; }
+}
+
 function localStamp() {
   const d = new Date();
   const p = (n) => String(n).padStart(2, '0');
@@ -771,6 +916,7 @@ function openSSE() {
     if (typeof d.seq === 'number') lastSeq = d.seq;
     // 首次连接与重连都对账一次，确保连接建立前后的变更不漏
     refresh();
+    refreshRewards();
   });
 
   es.addEventListener('update', (ev) => {
@@ -827,6 +973,7 @@ async function syncClassRoster(cid) {
 
 // 其它设备的改动：能局部更新就局部更新，只有结构性变化才整页重新拉取
 function handleRemoteUpdate(data) {
+  if (state.rewardOpen && !(data.client && data.client === CLIENT_ID)) refreshRewards();
   if (data.client && data.client === CLIENT_ID) return;   // 自己的改动已本地生效
   if (data.kind === 'score' && typeof data.score === 'number') {
     setGroupScore(data.group_id, data.score);
@@ -2343,6 +2490,22 @@ document.addEventListener('DOMContentLoaded', () => {
     $('#projector-voice').classList.add('hidden');
   }
   renderVoiceButtons();
+  $('#btn-rewards').addEventListener('click', toggleRewardsPage);
+  $('#reward-settings').addEventListener('submit', saveRewardStep);
+  $('#reward-class-select').addEventListener('change', e => {
+    state.rewardClassId = Number(e.target.value) || null;
+    renderRewardsPage();
+  });
+  document.querySelectorAll('[data-reward-mode]').forEach(button => {
+    button.addEventListener('click', () => {
+      state.rewardMode = button.dataset.rewardMode;
+      renderRewardsPage();
+    });
+  });
+  $('#reward-content').addEventListener('click', e => {
+    const button = e.target.closest('.reward-token[data-opportunity]');
+    if (button) toggleRewardOpportunity(Number(button.dataset.opportunity), button);
+  });
   $('#btn-export').addEventListener('click', doExport);
   $('#btn-import').addEventListener('click', doImport);
   $('#import-file').addEventListener('change', handleImportFile);

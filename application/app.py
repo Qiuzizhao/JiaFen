@@ -62,6 +62,42 @@ def close_db(exc):
         db.close()
 
 
+def reward_step_for_user(db, owner_id):
+    row = db.execute(
+        "SELECT step FROM reward_settings WHERE owner_id=?", (owner_id,)
+    ).fetchone()
+    return int(row["step"]) if row else 10
+
+
+def record_reward_milestones(db, group_id):
+    """Keep a per-group high-water mark and issue each crossed reward tier once."""
+    group = db.execute(
+        "SELECT g.score, c.owner_id FROM groups g JOIN classes c ON c.id=g.class_id "
+        "WHERE g.id=?", (group_id,)
+    ).fetchone()
+    if not group:
+        return
+    score = int(group["score"])
+    step = reward_step_for_user(db, group["owner_id"])
+    progress = db.execute(
+        "SELECT max_score FROM reward_progress WHERE group_id=?", (group_id,)
+    ).fetchone()
+    previous = int(progress["max_score"]) if progress else 0
+    if score > previous:
+        threshold = max(step, (previous // step + 1) * step)
+        while threshold <= score:
+            db.execute(
+                "INSERT OR IGNORE INTO reward_opportunities(group_id, threshold) VALUES(?,?)",
+                (group_id, threshold),
+            )
+            threshold += step
+    db.execute(
+        "INSERT INTO reward_progress(group_id, max_score) VALUES(?,?) "
+        "ON CONFLICT(group_id) DO UPDATE SET max_score=MAX(max_score, excluded.max_score)",
+        (group_id, max(previous, score)),
+    )
+
+
 @app.after_request
 def disable_static_cache(resp):
     # 页面与静态资源不做缓存，避免 Cloudflare/浏览器拿到旧版前端
@@ -73,6 +109,7 @@ def disable_static_cache(resp):
 def init_db():
     os.makedirs(DB_DIR, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode = WAL")
     conn.executescript(
         """
@@ -124,6 +161,26 @@ def init_db():
             created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
             last_login_at TEXT
         );
+
+        CREATE TABLE IF NOT EXISTS reward_settings (
+            owner_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            step INTEGER NOT NULL DEFAULT 10 CHECK(step BETWEEN 1 AND 10000)
+        );
+
+        CREATE TABLE IF NOT EXISTS reward_progress (
+            group_id INTEGER PRIMARY KEY REFERENCES groups(id) ON DELETE CASCADE,
+            max_score INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS reward_opportunities (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+            threshold INTEGER NOT NULL,
+            completed INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            completed_at TEXT,
+            UNIQUE(group_id, threshold)
+        );
         """
     )
     # 迁移：老库补 batch_id 列（全班加减分按批次记录，便于整体撤销）
@@ -166,6 +223,13 @@ def init_db():
     conn.execute("CREATE INDEX IF NOT EXISTS idx_classes_owner ON classes(owner_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_tx_class_id ON transactions(class_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_students_class ON students(class_id)")
+    # 老数据以当前积分初始化奖励档位；之后只按历史最高分向上发放。
+    missing_progress = conn.execute(
+        "SELECT g.id FROM groups g LEFT JOIN reward_progress p ON p.group_id=g.id "
+        "WHERE p.group_id IS NULL"
+    ).fetchall()
+    for row in missing_progress:
+        record_reward_milestones(conn, row[0])
     conn.commit()
     conn.close()
 
@@ -637,6 +701,7 @@ def update_group(gid):
             db.execute("UPDATE groups SET color=? WHERE id=?", (color, gid))
     if "score" in data and data["score"] is not None:
         db.execute("UPDATE groups SET score=? WHERE id=?", (int(data["score"]), gid))
+        record_reward_milestones(db, gid)
     db.commit()
     broadcast()
     return jsonify({"ok": True})
@@ -948,6 +1013,7 @@ def add_score():
         (gid, owned["id"], delta, reason),
     )
     db.execute("UPDATE groups SET score = score + ? WHERE id=?", (delta, gid))
+    record_reward_milestones(db, gid)
     db.commit()
     new_score = db.execute("SELECT score FROM groups WHERE id=?", (gid,)).fetchone()["score"]
     broadcast(
@@ -991,6 +1057,8 @@ def add_class_score(cid):
             (gr["id"], cid, delta, reason, batch_id),
         )
     db.execute("UPDATE groups SET score = score + ? WHERE class_id=?", (delta, cid))
+    for gr in groups:
+        record_reward_milestones(db, gr["id"])
     db.commit()
     rows = db.execute("SELECT id, score FROM groups WHERE class_id=?", (cid,)).fetchall()
     scores = [{"id": r["id"], "score": r["score"]} for r in rows]
@@ -1071,6 +1139,94 @@ def _group_scores(db, gids):
     return [{"id": r["id"], "score": r["score"]} for r in rows]
 
 
+@app.route("/api/rewards")
+@login_required
+def list_rewards():
+    db = get_db()
+    u = current_user()
+    classes = db.execute(
+        "SELECT id, name FROM classes WHERE owner_id=? ORDER BY id", (u["id"],)
+    ).fetchall()
+    result = []
+    for cls in classes:
+        groups = db.execute(
+            "SELECT g.id, g.name, g.color, g.score, g.sort_order, "
+            "COALESCE(p.max_score, 0) AS max_score "
+            "FROM groups g LEFT JOIN reward_progress p ON p.group_id=g.id "
+            "WHERE g.class_id=? ORDER BY g.sort_order, g.id", (cls["id"],)
+        ).fetchall()
+        group_result = []
+        for group in groups:
+            opportunities = db.execute(
+                "SELECT id, threshold, completed, created_at, completed_at "
+                "FROM reward_opportunities WHERE group_id=? ORDER BY threshold, id",
+                (group["id"],),
+            ).fetchall()
+            group_result.append({
+                **dict(group),
+                "opportunities": [dict(op) for op in opportunities],
+            })
+        result.append({**dict(cls), "groups": group_result})
+    return jsonify({"step": reward_step_for_user(db, u["id"]), "classes": result})
+
+
+@app.route("/api/rewards/settings", methods=["PUT"])
+@login_required
+def update_reward_settings():
+    data = request.get_json(silent=True) or {}
+    try:
+        step = int(data.get("step", 0))
+    except (TypeError, ValueError):
+        return jsonify({"error": "档位必须是 1 到 10000 之间的整数"}), 400
+    if not 1 <= step <= 10000:
+        return jsonify({"error": "档位必须是 1 到 10000 之间的整数"}), 400
+    db = get_db()
+    u = current_user()
+    groups = db.execute(
+        "SELECT g.id FROM groups g JOIN classes c ON c.id=g.class_id "
+        "WHERE c.owner_id=?", (u["id"],)
+    ).fetchall()
+    # 先结算旧档位，再把各组当前/历史最高分作为新档位的起点。
+    for group in groups:
+        record_reward_milestones(db, group["id"])
+    db.execute(
+        "INSERT INTO reward_settings(owner_id, step) VALUES(?,?) "
+        "ON CONFLICT(owner_id) DO UPDATE SET step=excluded.step", (u["id"], step)
+    )
+    db.execute(
+        "UPDATE reward_progress SET max_score=MAX(max_score, "
+        "(SELECT score FROM groups WHERE groups.id=reward_progress.group_id)) "
+        "WHERE group_id IN (SELECT g.id FROM groups g JOIN classes c ON c.id=g.class_id "
+        "WHERE c.owner_id=?)", (u["id"],)
+    )
+    db.commit()
+    broadcast({"kind": "rewards", "client": (data.get("client") or "")[:32]})
+    return jsonify({"ok": True, "step": step})
+
+
+@app.route("/api/rewards/opportunities/<int:oid>/toggle", methods=["POST"])
+@login_required
+def toggle_reward_opportunity(oid):
+    data = request.get_json(silent=True) or {}
+    db = get_db()
+    u = current_user()
+    opportunity = db.execute(
+        "SELECT ro.id, ro.completed FROM reward_opportunities ro "
+        "JOIN groups g ON g.id=ro.group_id JOIN classes c ON c.id=g.class_id "
+        "WHERE ro.id=? AND c.owner_id=?", (oid, u["id"])
+    ).fetchone()
+    if not opportunity:
+        return jsonify({"error": "奖励机会不存在"}), 404
+    completed = 0 if opportunity["completed"] else 1
+    db.execute(
+        "UPDATE reward_opportunities SET completed=?, completed_at=? WHERE id=?",
+        (completed, datetime.now().strftime("%Y-%m-%d %H:%M:%S") if completed else None, oid),
+    )
+    db.commit()
+    broadcast({"kind": "rewards", "client": (data.get("client") or "")[:32]})
+    return jsonify({"ok": True, "completed": bool(completed)})
+
+
 @app.route("/api/history")
 @login_required
 def history():
@@ -1108,6 +1264,18 @@ def export_data():
     data = []
     for c in classes:
         groups = db.execute("SELECT * FROM groups WHERE class_id=? ORDER BY id", (c["id"],)).fetchall()
+        group_data = []
+        for group in groups:
+            item = dict(group)
+            progress = db.execute(
+                "SELECT max_score FROM reward_progress WHERE group_id=?", (group["id"],)
+            ).fetchone()
+            item["reward_max_score"] = int(progress["max_score"]) if progress else int(group["score"])
+            item["reward_opportunities"] = [dict(row) for row in db.execute(
+                "SELECT threshold, completed, created_at, completed_at "
+                "FROM reward_opportunities WHERE group_id=? ORDER BY threshold", (group["id"],)
+            ).fetchall()]
+            group_data.append(item)
         students = db.execute(
             "SELECT id, group_id, name, sort_order FROM students WHERE class_id=? "
             "ORDER BY sort_order ASC, id",
@@ -1117,13 +1285,18 @@ def export_data():
             {
                 "id": c["id"],
                 "name": c["name"],
-                "groups": [dict(g) for g in groups],
+                "groups": group_data,
                 "students": [dict(s) for s in students],
             }
         )
-    # version 2：备份里带上班级名单（version 1 的老备份照样能导入）
+    # version 3：包含奖励档位、机会状态和进度；旧版备份仍可导入。
     return jsonify(
-        {"version": 2, "exported_at": datetime.now().isoformat(), "classes": data}
+        {
+            "version": 3,
+            "exported_at": datetime.now().isoformat(),
+            "reward_step": reward_step_for_user(db, u["id"]),
+            "classes": data,
+        }
     )
 
 
@@ -1134,6 +1307,15 @@ def import_data():
     classes = data.get("classes", [])
     db = get_db()
     u = current_user()
+    try:
+        backup_step = int(data.get("reward_step", 0))
+    except (TypeError, ValueError):
+        backup_step = 0
+    if 1 <= backup_step <= 10000:
+        db.execute(
+            "INSERT INTO reward_settings(owner_id, step) VALUES(?,?) "
+            "ON CONFLICT(owner_id) DO UPDATE SET step=excluded.step", (u["id"], backup_step)
+        )
     # 导入只覆盖自己的班级，其他老师的数据一概不动
     db.execute(
         "DELETE FROM students WHERE class_id IN (SELECT id FROM classes WHERE owner_id=?)",
@@ -1161,6 +1343,29 @@ def import_data():
                 (cid, g.get("name", ""), g.get("color", "#5B9BD5"), int(g.get("score", 0))),
             )
             gmap[g.get("id")] = gcur.lastrowid
+            record_reward_milestones(db, gcur.lastrowid)
+            max_score = max(int(g.get("reward_max_score", g.get("score", 0))), 0)
+            db.execute(
+                "UPDATE reward_progress SET max_score=MAX(max_score, ?) WHERE group_id=?",
+                (max_score, gcur.lastrowid),
+            )
+            if "reward_opportunities" in g:
+                db.execute("DELETE FROM reward_opportunities WHERE group_id=?", (gcur.lastrowid,))
+                for opportunity in g.get("reward_opportunities") or []:
+                    try:
+                        threshold = int(opportunity.get("threshold", 0))
+                    except (TypeError, ValueError):
+                        continue
+                    if threshold <= 0:
+                        continue
+                    completed = 1 if opportunity.get("completed") else 0
+                    db.execute(
+                        "INSERT OR IGNORE INTO reward_opportunities "
+                        "(group_id, threshold, completed, created_at, completed_at) VALUES(?,?,?,?,?)",
+                        (gcur.lastrowid, threshold, completed,
+                         opportunity.get("created_at") or datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                         opportunity.get("completed_at") if completed else None),
+                    )
         for s in c.get("students", []) or []:
             db.execute(
                 "INSERT INTO students(class_id, group_id, name, sort_order) VALUES(?,?,?,?)",

@@ -14,7 +14,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png?v=20260915">
   <link rel="icon" href="/favicon.ico?v=20260915" sizes="any">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=20260915">
-  <link rel="stylesheet" href="/style.css?v=20260922e">
+  <link rel="stylesheet" href="/style.css?v=20260925a">
 </head>
 <body>
 
@@ -48,6 +48,7 @@
         <button id="btn-classes" class="ghost">班级</button>
         <button id="btn-export" class="ghost">导出备份</button>
         <button id="btn-import" class="ghost">导入备份</button>
+        <button id="btn-rewards" class="ghost" aria-pressed="false">奖励</button>
         <button id="btn-voice" class="ghost" title="语音播报开关">🔈 语音播报</button>
         <button id="btn-projector" class="ghost">投屏模式</button>
         <button id="btn-account" class="ghost who-btn" title="账号设置">👤 <span id="who"></span></button>
@@ -55,7 +56,32 @@
     </header>
     <input type="file" id="import-file" accept="application/json,.json" class="hidden">
 
-    <div class="layout">
+    <section id="rewards-page" class="rewards-page hidden" aria-label="奖励">
+      <div class="rewards-head">
+        <div>
+          <div class="rewards-kicker">CLASS REWARDS</div>
+          <h1>奖励</h1>
+        </div>
+        <form id="reward-settings" class="reward-settings">
+          <label for="reward-step">每</label>
+          <input id="reward-step" type="number" min="1" max="10000" step="1" inputmode="numeric">
+          <span>分</span>
+          <button id="reward-save" class="primary" type="submit">保存</button>
+        </form>
+      </div>
+      <div class="reward-toolbar">
+        <div class="reward-tabs" role="tablist" aria-label="奖励显示方式">
+          <button type="button" class="on" data-reward-mode="class" role="tab" aria-selected="true">按班级</button>
+          <button type="button" data-reward-mode="pending" role="tab" aria-selected="false">待奖励 <span id="reward-pending-count">0</span></button>
+        </div>
+        <select id="reward-class-select" aria-label="选择班级"></select>
+        <div id="reward-summary" class="reward-summary"></div>
+      </div>
+      <div id="reward-hint" class="reward-hint">档位调整从各组历史最高分之后生效</div>
+      <div id="reward-content" class="reward-content"></div>
+    </section>
+
+    <div id="layout" class="layout">
       <!-- 侧栏：班级 -->
       <aside class="sidebar">
         <div class="panel-head">班级 <button id="btn-class-close" class="icon-btn class-close" aria-label="关闭">✕</button></div>
@@ -212,6 +238,6 @@
     <div id="projector-board" class="projector-board"></div>
   </div>
 
-  <script src="/app.js?v=20260922e"></script>
+  <script src="/app.js?v=20260925a"></script>
 </body>
 </html>
