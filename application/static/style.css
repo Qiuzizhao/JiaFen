@@ -708,19 +708,21 @@ html { -webkit-text-size-adjust: 100%; }
   .board-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
   .board-actions #btn-reset { display: none; }
   .board-actions button { white-space: nowrap; }
-  .board { grid-template-columns: 1fr; gap: 12px; }
-  .group-card { gap: 14px; padding: 16px; }
+  .board { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .group-card { gap: 10px; padding: 12px 10px; }
+  .group-card .group-head { gap: 6px; }
+  .group-card .group-head .dot { width: 10px; height: 10px; }
+  .group-card .group-head .gname { font-size: 14px; }
   .group-card .group-head .icon-btn,
   .group-card .custom,
   .group-card .school-rank,
   .group-card .quick .qbtn:not([data-delta="1"]):not([data-delta="-1"]) { display: none; }
-  .group-card .gscore { padding: 2px 0; font-size: 42px; line-height: 1.1; }
-  .group-card .quick { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-  .group-card .quick .qbtn { min-height: 52px; border-radius: 11px; font-size: 20px; }
+  .group-card .gscore { padding: 0; font-size: 34px; line-height: 1.1; }
+  .group-card .quick { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+  .group-card .quick .qbtn { min-height: 44px; border-radius: 9px; font-size: 17px; }
   .class-score { gap: 6px; padding: 10px; }
-  .class-score .cs-quick { flex: 1 1 0; }
-  .class-score .cs-quick .qbtn { flex: 1; min-width: 0; }
-  .class-score .cs-quick .qbtn:not([data-delta="1"]):not([data-delta="-1"]),
+  .class-score .cs-quick { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); flex: 1 1 0; min-width: 0; }
+  .class-score .cs-quick .qbtn { min-width: 0; min-height: 44px; font-size: 15px; }
   .class-score .cs-custom { display: none; }
   .gscore { font-size: 34px; }
   input, .custom input { font-size: 16px; }
@@ -757,6 +759,11 @@ html { -webkit-text-size-adjust: 100%; }
   }
   .sidebar.open { display: block; }
   .class-backdrop.open { display: block; position: fixed; inset: 0; z-index: 55; background: rgba(0,0,0,.45); }
+}
+
+@media (max-width: 360px) {
+  .class-score .cs-label { flex: 1 1 100%; }
+  .class-score .cs-quick { flex: 1 1 100%; grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
 /* ---------------------------------------------------------------------------
