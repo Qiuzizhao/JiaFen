@@ -120,11 +120,6 @@ function rewardGroupHTML(group, className = '') {
 function renderRewardsPage() {
   const data = state.rewardData;
   if (!data) return;
-  const allGroups = data.classes.flatMap(c => c.groups);
-  const pendingCount = allGroups.reduce((sum, g) => sum + (g.opportunities || []).filter(o => !o.completed).length, 0);
-  const completedCount = allGroups.reduce((sum, g) => sum + (g.opportunities || []).filter(o => o.completed).length, 0);
-  $('#reward-hero-count').textContent = pendingCount;
-  $('#reward-completed-count').textContent = `已完成 ${completedCount}`;
   const stepInput = $('#reward-step');
   if (document.activeElement !== stepInput) stepInput.value = data.step;
   $('#reward-save').disabled = Number(stepInput.value) === Number(data.step);
