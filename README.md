@@ -18,6 +18,18 @@
 
 ![主界面](docs/screenshots/03-board.png)
 
+奖励页：按班级查看各组机会，蓝色为待奖励，灰色为已完成；点击图标即可切换状态
+
+![奖励页：按班级](docs/screenshots/09-rewards-class.png)
+
+待奖励：集中查看仍有奖励机会的小组
+
+![奖励页：待奖励](docs/screenshots/10-rewards-pending.png)
+
+手机上的奖励页
+
+![移动端奖励页](docs/screenshots/11-rewards-mobile.png)
+
 班级名单：记分板上的「📋 班级名单」，每个小组一份名单，合起来就是班级名单；顶部常驻快速添加条（点一下组，之后连着敲名字回车就行）、左侧快速跳转、随时搜索，也支持批量导入到指定小组和拖动换组
 
 ![班级名单](docs/screenshots/07-roster.png)

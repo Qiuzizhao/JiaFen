@@ -14,7 +14,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png?v=20260915">
   <link rel="icon" href="/favicon.ico?v=20260915" sizes="any">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=20260915">
-  <link rel="stylesheet" href="/style.css?v=20260925a">
+  <link rel="stylesheet" href="/style.css?v=20260925b">
 </head>
 <body>
 
@@ -57,27 +57,29 @@
     <input type="file" id="import-file" accept="application/json,.json" class="hidden">
 
     <section id="rewards-page" class="rewards-page hidden" aria-label="奖励">
-      <div class="rewards-head">
-        <div>
-          <div class="rewards-kicker">CLASS REWARDS</div>
+      <div class="reward-hero">
+        <div class="reward-hero-title">
+          <span class="reward-hero-mark" aria-hidden="true">✦</span>
           <h1>奖励</h1>
         </div>
-        <form id="reward-settings" class="reward-settings">
-          <label for="reward-step">每</label>
-          <input id="reward-step" type="number" min="1" max="10000" step="1" inputmode="numeric">
-          <span>分</span>
-          <button id="reward-save" class="primary" type="submit">保存</button>
-        </form>
+        <div class="reward-hero-stat">
+          <strong id="reward-hero-count">0</strong>
+          <div><span>待奖励机会</span><small id="reward-completed-count">已完成 0</small></div>
+        </div>
       </div>
-      <div class="reward-toolbar">
+      <div class="reward-controlbar">
         <div class="reward-tabs" role="tablist" aria-label="奖励显示方式">
           <button type="button" class="on" data-reward-mode="class" role="tab" aria-selected="true">按班级</button>
-          <button type="button" data-reward-mode="pending" role="tab" aria-selected="false">待奖励 <span id="reward-pending-count">0</span></button>
+          <button type="button" data-reward-mode="pending" role="tab" aria-selected="false">待奖励</button>
         </div>
-        <select id="reward-class-select" aria-label="选择班级"></select>
-        <div id="reward-summary" class="reward-summary"></div>
+        <form id="reward-settings" class="reward-settings" title="调整档位后，从各组历史最高分之后开始计算">
+          <label for="reward-step">每</label>
+          <input id="reward-step" type="number" min="1" max="10000" step="1" inputmode="numeric" aria-label="每多少分获得一次奖励机会">
+          <span>分一次</span>
+          <button id="reward-save" type="submit">保存</button>
+        </form>
       </div>
-      <div id="reward-hint" class="reward-hint">档位调整从各组历史最高分之后生效</div>
+      <nav id="reward-class-nav" class="reward-class-nav" aria-label="选择班级"></nav>
       <div id="reward-content" class="reward-content"></div>
     </section>
 
@@ -238,6 +240,6 @@
     <div id="projector-board" class="projector-board"></div>
   </div>
 
-  <script src="/app.js?v=20260925a"></script>
+  <script src="/app.js?v=20260925b"></script>
 </body>
 </html>

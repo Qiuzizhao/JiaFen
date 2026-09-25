@@ -93,31 +93,27 @@ async function refreshRewards() {
   }
 }
 
-function rewardGroupHTML(group, step) {
+function rewardGroupHTML(group, className = '') {
   const opportunities = group.opportunities || [];
-  const pending = opportunities.filter(o => !o.completed).length;
-  const maxScore = Math.max(0, Number(group.max_score) || 0);
-  const next = (Math.floor(maxScore / step) + 1) * step;
-  const progress = maxScore % step / step * 100;
   const tokens = opportunities.length
     ? opportunities.map(o => {
       const done = !!o.completed;
       const label = `${o.threshold} 分奖励机会，${done ? '已完成' : '待奖励'}，点击切换状态`;
       return `<button class="reward-token ${done ? 'completed' : 'available'}" data-opportunity="${o.id}" title="${label}" aria-label="${label}" aria-pressed="${done}">
-        <span class="reward-token-star" aria-hidden="true">✦</span>
-        <span class="reward-token-threshold">${o.threshold}</span>
-        ${done ? '<span class="reward-token-check" aria-hidden="true">✓</span>' : ''}
+        <span class="reward-token-disc" aria-hidden="true">✦</span>
+        <span class="reward-token-threshold">${o.threshold} 分</span>
       </button>`;
     }).join('')
-    : '<span class="reward-no-tokens">暂无机会</span>';
-  return `<article class="reward-group" data-pending="${pending}" style="--group-color:${esc(group.color)}">
-    <div class="reward-group-main">
-      <span class="reward-group-dot"></span>
-      <span class="reward-group-name">${esc(group.name)}</span>
-      <span class="reward-group-score">${group.score}<small>分</small></span>
+    : '<span class="reward-card-empty"><span aria-hidden="true">✦</span> 暂未获得</span>';
+  return `<article class="reward-card" style="--group-color:${esc(group.color)}">
+    <div class="reward-card-top">
+      <div class="reward-card-identity">
+        <span class="reward-card-dot" aria-hidden="true"></span>
+        <div class="reward-card-names"><h3>${esc(group.name)}</h3>${className ? `<span>${esc(className)}</span>` : ''}</div>
+      </div>
+      <div class="reward-card-score"><strong>${group.score}</strong><span>分</span></div>
     </div>
-    <div class="reward-tokens">${tokens}</div>
-    <div class="reward-next"><div class="reward-progress"><span style="width:${progress}%"></span></div><span>下一档 ${next} 分</span></div>
+    <div class="reward-card-tokens">${tokens}</div>
   </article>`;
 }
 
@@ -127,15 +123,19 @@ function renderRewardsPage() {
   const allGroups = data.classes.flatMap(c => c.groups);
   const pendingCount = allGroups.reduce((sum, g) => sum + (g.opportunities || []).filter(o => !o.completed).length, 0);
   const completedCount = allGroups.reduce((sum, g) => sum + (g.opportunities || []).filter(o => o.completed).length, 0);
-  $('#reward-pending-count').textContent = pendingCount;
-  $('#reward-summary').innerHTML = `<span class="reward-summary-pending">${pendingCount} 待奖励</span><span>${completedCount} 已完成</span>`;
+  $('#reward-hero-count').textContent = pendingCount;
+  $('#reward-completed-count').textContent = `已完成 ${completedCount}`;
   const stepInput = $('#reward-step');
   if (document.activeElement !== stepInput) stepInput.value = data.step;
+  $('#reward-save').disabled = Number(stepInput.value) === Number(data.step);
 
-  const select = $('#reward-class-select');
-  select.innerHTML = data.classes.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
-  select.value = String(state.rewardClassId || '');
-  select.classList.toggle('hidden', state.rewardMode !== 'class' || data.classes.length < 2);
+  const classNav = $('#reward-class-nav');
+  classNav.innerHTML = data.classes.map(c => {
+    const count = c.groups.reduce((n, g) => n + (g.opportunities || []).filter(o => !o.completed).length, 0);
+    const active = c.id === state.rewardClassId;
+    return `<button type="button" class="reward-class-chip ${active ? 'on' : ''}" data-reward-class="${c.id}" aria-pressed="${active}">${esc(c.name)}${count ? `<span>${count}</span>` : ''}</button>`;
+  }).join('');
+  classNav.classList.toggle('hidden', state.rewardMode !== 'class' || data.classes.length < 2);
   document.querySelectorAll('[data-reward-mode]').forEach(button => {
     const active = button.dataset.rewardMode === state.rewardMode;
     button.classList.toggle('on', active);
@@ -151,30 +151,27 @@ function renderRewardsPage() {
     const cls = data.classes.find(c => c.id === state.rewardClassId) || data.classes[0];
     if (!cls) { content.innerHTML = '<div class="reward-empty">暂无班级</div>'; return; }
     state.rewardClassId = cls.id;
-    const pending = cls.groups.reduce((n, g) => n + (g.opportunities || []).filter(o => !o.completed).length, 0);
-    content.innerHTML = `<section class="reward-class-section">
-      <header class="reward-class-head"><h2>${esc(cls.name)}</h2><span>${pending} 待奖励</span></header>
-      ${cls.groups.length ? `<div class="reward-groups">${cls.groups.map(g => rewardGroupHTML(g, data.step)).join('')}</div>` : '<div class="reward-empty">这个班级还没有小组</div>'}
-    </section>`;
+    content.innerHTML = `<div class="reward-section-head"><h2>${esc(cls.name)}</h2><span>${cls.groups.length} 个小组</span></div>
+      ${cls.groups.length ? `<div class="reward-grid">${cls.groups.map(g => rewardGroupHTML(g)).join('')}</div>` : '<div class="reward-empty">这个班级还没有小组</div>'}`;
     return;
   }
-  const waiting = data.classes.map(c => ({
-    ...c,
-    groups: c.groups.filter(g => (g.opportunities || []).some(o => !o.completed)),
-  })).filter(c => c.groups.length);
+  const waiting = data.classes.flatMap(c => c.groups
+    .filter(g => (g.opportunities || []).some(o => !o.completed))
+    .map(g => ({ group: g, className: c.name,
+      pending: g.opportunities.filter(o => !o.completed).length })));
+  waiting.sort((a, b) => b.pending - a.pending);
   if (!waiting.length) {
-    content.innerHTML = '<div class="reward-empty reward-empty-clear"><span>✦</span><strong>目前没有待奖励的小组</strong></div>';
+    content.innerHTML = '<div class="reward-empty reward-empty-clear"><span aria-hidden="true">✦</span><strong>目前没有待奖励的小组</strong></div>';
     return;
   }
-  content.innerHTML = waiting.map(c => `<section class="reward-class-section">
-    <header class="reward-class-head"><h2>${esc(c.name)}</h2><span>${c.groups.length} 个小组</span></header>
-    <div class="reward-groups">${c.groups.map(g => rewardGroupHTML(g, data.step)).join('')}</div>
-  </section>`).join('');
+  content.innerHTML = `<div class="reward-section-head"><h2>待奖励小组</h2><span>${waiting.length} 个小组</span></div>
+    <div class="reward-grid">${waiting.map(item => rewardGroupHTML(item.group, item.className)).join('')}</div>`;
 }
 
 async function saveRewardStep(event) {
   event.preventDefault();
   const step = Number($('#reward-step').value);
+  if (state.rewardData && step === Number(state.rewardData.step)) return;
   if (!Number.isInteger(step) || step < 1 || step > 10000) {
     $('#reward-step').focus();
     alert('档位必须是 1 到 10000 之间的整数');
@@ -2492,8 +2489,13 @@ document.addEventListener('DOMContentLoaded', () => {
   renderVoiceButtons();
   $('#btn-rewards').addEventListener('click', toggleRewardsPage);
   $('#reward-settings').addEventListener('submit', saveRewardStep);
-  $('#reward-class-select').addEventListener('change', e => {
-    state.rewardClassId = Number(e.target.value) || null;
+  $('#reward-step').addEventListener('input', e => {
+    $('#reward-save').disabled = Number(e.target.value) === Number(state.rewardData?.step);
+  });
+  $('#reward-class-nav').addEventListener('click', e => {
+    const button = e.target.closest('[data-reward-class]');
+    if (!button) return;
+    state.rewardClassId = Number(button.dataset.rewardClass) || null;
     renderRewardsPage();
   });
   document.querySelectorAll('[data-reward-mode]').forEach(button => {
