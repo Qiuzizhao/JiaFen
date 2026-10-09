@@ -907,12 +907,11 @@ html { -webkit-text-size-adjust: 100%; }
 .reward-add-box .err:empty { display: none; }
 .reward-add-box .modal-actions { margin-top: 20px; }
 .reward-add-box .primary:disabled { opacity: .6; cursor: default; }
-.reward-class-nav { display: flex; gap: 8px; overflow-x: auto; padding: 2px 1px 13px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
-.reward-class-nav::-webkit-scrollbar { display: none; }
-.reward-class-chip { display: inline-flex; align-items: center; gap: 8px; flex: none; padding: 8px 13px; border: 1px solid var(--line); border-radius: 10px; background: #f6f8fc; color: var(--text); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.reward-class-nav { display: flex; flex-wrap: wrap; gap: 8px; padding: 2px 1px 13px; }
+.reward-class-chip { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; padding: 8px 13px; border: 1px solid var(--line); border-radius: 10px; background: #f6f8fc; color: var(--text); font-size: 12px; font-weight: 600; overflow-wrap: anywhere; text-align: left; }
 .reward-class-chip:hover { background: #eef1f7; }
 .reward-class-chip.on { border-color: #d3e2ff; background: #e3edff; color: var(--brand-dark); }
-.reward-class-chip span { display: grid; min-width: 19px; height: 19px; place-items: center; padding: 0 5px; border-radius: 99px; background: #eef1f7; color: var(--muted); font-size: 11px; }
+.reward-class-chip span { display: grid; min-width: 19px; height: 19px; flex: none; place-items: center; padding: 0 5px; border-radius: 99px; background: #eef1f7; color: var(--muted); font-size: 11px; }
 .reward-class-chip.on span { background: #d3e2ff; color: var(--brand-dark); }
 .reward-section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 7px 1px 14px; }
 .reward-section-head h2 { margin: 0; color: var(--text); font-size: 17px; font-weight: 700; }
