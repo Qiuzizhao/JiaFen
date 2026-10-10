@@ -1177,6 +1177,10 @@ async function syncClassRoster(cid) {
 function handleRemoteUpdate(data) {
   if (state.rewardOpen && !(data.client && data.client === CLIENT_ID)) refreshRewards();
   if (data.client && data.client === CLIENT_ID) return;   // 自己的改动已本地生效
+  if (data.kind === 'archives') {
+    document.dispatchEvent(new Event('jiafen:archives'));
+    return;
+  }
   if (data.kind === 'score' && typeof data.score === 'number') {
     setGroupScore(data.group_id, data.score);
     const g = findGroup(data.group_id);

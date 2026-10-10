@@ -6,7 +6,7 @@ import sqlite3
 import threading
 import time
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 
 from flask import Flask, request, jsonify, session, g, Response, send_from_directory, has_request_context
@@ -106,6 +106,76 @@ def disable_static_cache(resp):
     if not request.path.startswith("/api/"):
         resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     return resp
+
+
+def init_archive_history(conn):
+    """Keep ranking history independently of the editable scoring log."""
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS ranking_history_bounds (
+            owner_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            available_from TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS ranking_class_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            class_id INTEGER NOT NULL, name TEXT NOT NULL, active INTEGER NOT NULL,
+            at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now'))
+        );
+        CREATE TABLE IF NOT EXISTS ranking_group_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            group_id INTEGER NOT NULL, class_id INTEGER NOT NULL,
+            name TEXT NOT NULL, score INTEGER NOT NULL, sort_order INTEGER NOT NULL,
+            active INTEGER NOT NULL,
+            at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_rank_class_history ON ranking_class_history(owner_id,class_id,at,id);
+        CREATE INDEX IF NOT EXISTS idx_rank_group_history ON ranking_group_history(owner_id,group_id,at,id);
+        CREATE TABLE IF NOT EXISTS ranking_archives (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            title TEXT NOT NULL, cutoff_at TEXT NOT NULL, snapshot TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_ranking_archives_owner ON ranking_archives(owner_id,id);
+        CREATE TRIGGER IF NOT EXISTS rank_user_insert AFTER INSERT ON users BEGIN
+            INSERT OR IGNORE INTO ranking_history_bounds VALUES(NEW.id,strftime('%Y-%m-%d %H:%M:%f','now'));
+        END;
+        CREATE TRIGGER IF NOT EXISTS rank_class_insert AFTER INSERT ON classes BEGIN
+            INSERT INTO ranking_class_history(owner_id,class_id,name,active) VALUES(NEW.owner_id,NEW.id,NEW.name,1);
+        END;
+        CREATE TRIGGER IF NOT EXISTS rank_class_update AFTER UPDATE OF name ON classes WHEN NEW.name<>OLD.name BEGIN
+            INSERT INTO ranking_class_history(owner_id,class_id,name,active) VALUES(NEW.owner_id,NEW.id,NEW.name,1);
+        END;
+        CREATE TRIGGER IF NOT EXISTS rank_class_delete BEFORE DELETE ON classes BEGIN
+            INSERT INTO ranking_class_history(owner_id,class_id,name,active)
+            SELECT OLD.owner_id,OLD.id,OLD.name,0 WHERE EXISTS(SELECT 1 FROM users WHERE id=OLD.owner_id);
+        END;
+        CREATE TRIGGER IF NOT EXISTS rank_group_insert AFTER INSERT ON groups BEGIN
+            INSERT INTO ranking_group_history(owner_id,group_id,class_id,name,score,sort_order,active)
+            SELECT owner_id,NEW.id,NEW.class_id,NEW.name,NEW.score,NEW.sort_order,1 FROM classes WHERE id=NEW.class_id;
+        END;
+        CREATE TRIGGER IF NOT EXISTS rank_group_update AFTER UPDATE OF score,name,sort_order,class_id ON groups
+        WHEN NEW.score<>OLD.score OR NEW.name<>OLD.name OR NEW.sort_order<>OLD.sort_order OR NEW.class_id<>OLD.class_id BEGIN
+            INSERT INTO ranking_group_history(owner_id,group_id,class_id,name,score,sort_order,active)
+            SELECT owner_id,NEW.id,NEW.class_id,NEW.name,NEW.score,NEW.sort_order,1 FROM classes WHERE id=NEW.class_id;
+        END;
+        CREATE TRIGGER IF NOT EXISTS rank_group_delete BEFORE DELETE ON groups BEGIN
+            INSERT INTO ranking_group_history(owner_id,group_id,class_id,name,score,sort_order,active)
+            SELECT owner_id,OLD.id,OLD.class_id,OLD.name,OLD.score,OLD.sort_order,0 FROM classes
+            WHERE id=OLD.class_id AND EXISTS(SELECT 1 FROM users WHERE id=owner_id);
+        END;
+    """)
+    # Existing users start from a verified current baseline; missing old logs are not fabricated.
+    owners = conn.execute("SELECT id FROM users WHERE id NOT IN (SELECT owner_id FROM ranking_history_bounds)").fetchall()
+    for owner in owners:
+        at = conn.execute("SELECT strftime('%Y-%m-%d %H:%M:%f','now')").fetchone()[0]
+        conn.execute("INSERT INTO ranking_history_bounds VALUES(?,?)", (owner[0], at))
+        conn.execute("INSERT INTO ranking_class_history(owner_id,class_id,name,active,at) "
+                     "SELECT owner_id,id,name,1,? FROM classes WHERE owner_id=?", (at, owner[0]))
+        conn.execute("INSERT INTO ranking_group_history(owner_id,group_id,class_id,name,score,sort_order,active,at) "
+                     "SELECT c.owner_id,g.id,g.class_id,g.name,g.score,g.sort_order,1,? "
+                     "FROM groups g JOIN classes c ON c.id=g.class_id WHERE c.owner_id=?", (at, owner[0]))
 
 
 def init_db():
@@ -268,6 +338,7 @@ def init_db():
     ).fetchall()
     for row in missing_progress:
         record_reward_milestones(conn, row[0])
+    init_archive_history(conn)
     conn.commit()
     conn.close()
 
@@ -1358,6 +1429,88 @@ def history():
 
 
 # ---------------------------------------------------------------------------
+def archive_timestamp(value):
+    return value.replace(" ", "T") + "Z"
+
+
+def rankings_at(db, owner_id, cutoff):
+    classes = db.execute(
+        "SELECT h.* FROM ranking_class_history h WHERE h.owner_id=? AND h.at<=? "
+        "AND h.id=(SELECT MAX(v.id) FROM ranking_class_history v WHERE v.owner_id=h.owner_id "
+        "AND v.class_id=h.class_id AND v.at<=?) AND h.active=1 ORDER BY h.class_id",
+        (owner_id, cutoff, cutoff),
+    ).fetchall()
+    groups = db.execute(
+        "SELECT h.* FROM ranking_group_history h WHERE h.owner_id=? AND h.at<=? "
+        "AND h.id=(SELECT MAX(v.id) FROM ranking_group_history v WHERE v.owner_id=h.owner_id "
+        "AND v.group_id=h.group_id AND v.at<=?) AND h.active=1 ORDER BY h.sort_order,h.group_id",
+        (owner_id, cutoff, cutoff),
+    ).fetchall()
+    return [{"name": c["name"], "groups": [{"name": g["name"], "score": g["score"]}
+             for g in groups if g["class_id"] == c["class_id"]]} for c in classes]
+
+
+@app.route("/api/archives")
+@login_required
+def list_archives():
+    db = get_db()
+    uid = current_user()["id"]
+    bound = db.execute("SELECT available_from FROM ranking_history_bounds WHERE owner_id=?", (uid,)).fetchone()
+    rows = db.execute("SELECT id,title,cutoff_at,created_at FROM ranking_archives WHERE owner_id=? ORDER BY id DESC", (uid,)).fetchall()
+    return jsonify({"available_from": archive_timestamp(bound[0]) if bound else None,
+                    "archives": [{**dict(r), "cutoff_at": archive_timestamp(r["cutoff_at"]),
+                                  "created_at": archive_timestamp(r["created_at"])} for r in rows]})
+
+
+@app.route("/api/archives/<int:aid>")
+@login_required
+def get_archive(aid):
+    row = get_db().execute("SELECT * FROM ranking_archives WHERE id=? AND owner_id=?", (aid, current_user()["id"])).fetchone()
+    if not row:
+        return jsonify({"error": "归档不存在"}), 404
+    return jsonify({"id": row["id"], "title": row["title"], "cutoff_at": archive_timestamp(row["cutoff_at"]),
+                    "classes": json.loads(row["snapshot"])})
+
+
+@app.route("/api/archives", methods=["POST"])
+@login_required
+def create_archive():
+    data = request.get_json(silent=True) or {}
+    now = datetime.now(timezone.utc)
+    try:
+        chosen = datetime.fromisoformat(data["cutoff_at"].replace("Z", "+00:00")) if data.get("cutoff_at") else now
+        if chosen.tzinfo is None:
+            chosen = chosen.replace(tzinfo=timezone(timedelta(hours=8)))
+        chosen = chosen.astimezone(timezone.utc)
+    except (ValueError, TypeError, AttributeError):
+        return jsonify({"error": "截止时间无效"}), 400
+    if chosen > now:
+        return jsonify({"error": "截止时间不能晚于当前时间"}), 400
+    # A selected second includes every operation recorded within that second.
+    chosen = min(chosen.replace(microsecond=999999), now)
+    cutoff = chosen.strftime("%Y-%m-%d %H:%M:%S.%f")
+    title = data.get("title", "")
+    if not isinstance(title, str) or len(title.strip()) > 40:
+        return jsonify({"error": "归档名称最多40个字"}), 400
+    title = title.strip() or chosen.astimezone(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M:%S")
+    db = get_db()
+    uid = current_user()["id"]
+    db.execute("BEGIN IMMEDIATE")
+    bound = db.execute("SELECT available_from FROM ranking_history_bounds WHERE owner_id=?", (uid,)).fetchone()
+    if not bound or cutoff < bound[0]:
+        db.rollback()
+        return jsonify({"error": "该时间尚无完整的积分历史，无法准确归档"}), 400
+    snapshot = rankings_at(db, uid, cutoff)
+    if not any(c["groups"] for c in snapshot):
+        db.rollback()
+        return jsonify({"error": "该时间没有可归档的小组积分"}), 400
+    cur = db.execute("INSERT INTO ranking_archives(owner_id,title,cutoff_at,snapshot) VALUES(?,?,?,?)",
+                     (uid, title, cutoff, json.dumps(snapshot, ensure_ascii=False)))
+    db.commit()
+    broadcast({"kind": "archives", "client": (data.get("client") or "")[:32]})
+    return jsonify({"id": cur.lastrowid}), 201
+
+
 # 导出 / 导入（学期备份）
 # ---------------------------------------------------------------------------
 @app.route("/api/export")

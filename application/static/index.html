@@ -14,7 +14,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png?v=20260915">
   <link rel="icon" href="/favicon.ico?v=20260915" sizes="any">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=20260915">
-  <link rel="stylesheet" href="/style.css?v=20261010a">
+  <link rel="stylesheet" href="/style.css?v=20261010b">
 </head>
 <body>
 
@@ -46,6 +46,7 @@
       <div class="brand">课堂小组积分 <span id="sync-status" class="sync-status syncing" title="正在连接实时同步">同步中…</span></div>
       <div class="actions">
         <button id="btn-rewards" class="ghost" aria-pressed="false">奖励</button>
+        <button id="btn-archives" class="ghost" type="button" aria-haspopup="dialog" aria-controls="archives-modal">归档</button>
         <button id="btn-classes" class="ghost">班级</button>
         <div class="backup-wrap">
           <button id="btn-backup" class="ghost" type="button" aria-expanded="false" aria-controls="backup-menu">备份 <span aria-hidden="true">▾</span></button>
@@ -144,6 +145,38 @@
   <div id="class-backdrop" class="class-backdrop"></div>
 
   <!-- 奖励设置 -->
+  <div id="archives-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="archives-title">
+    <div class="modal-box archives-box">
+      <div class="modal-head">
+        <h3 id="archives-title">积分归档</h3>
+        <button id="archives-close" class="icon-btn" type="button" aria-label="关闭">✕</button>
+      </div>
+      <div class="archives-toolbar">
+        <select id="archives-select" aria-label="选择归档"></select>
+        <button id="archives-new" class="primary" type="button">新建归档</button>
+      </div>
+      <p id="archives-error" class="err" role="alert"></p>
+      <div id="archives-detail"></div>
+    </div>
+  </div>
+  <div id="archive-create-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="archive-create-title">
+    <form id="archive-create-form" class="modal-box archive-create-box">
+      <div class="modal-head">
+        <h3 id="archive-create-title">新建归档</h3>
+        <button id="archive-create-close" class="icon-btn" type="button" aria-label="关闭">✕</button>
+      </div>
+      <label for="archive-name">名称</label>
+      <input id="archive-name" type="text" maxlength="40" placeholder="可留空">
+      <label for="archive-cutoff">截止时间（北京时间）</label>
+      <input id="archive-cutoff" type="datetime-local" step="1" required>
+      <p id="archive-available" class="muted small"></p>
+      <p id="archive-create-error" class="err" role="alert"></p>
+      <div class="modal-actions">
+        <button id="archive-create-cancel" class="ghost" type="button">取消</button>
+        <button id="archive-create-save" class="primary" type="submit">保存归档</button>
+      </div>
+    </form>
+  </div>
   <div id="reward-lock-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="reward-lock-title">
     <div class="modal-box reward-lock-box">
       <div class="modal-head">
@@ -312,6 +345,7 @@
     <div id="projector-board" class="projector-board"></div>
   </div>
 
-  <script src="/app.js?v=20261010a"></script>
+  <script src="/app.js?v=20261010b"></script>
+  <script src="/archives.js?v=20261010b"></script>
 </body>
 </html>
