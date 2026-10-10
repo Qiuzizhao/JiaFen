@@ -1436,14 +1436,16 @@ def archive_timestamp(value):
 def rankings_at(db, owner_id, cutoff):
     classes = db.execute(
         "SELECT h.* FROM ranking_class_history h WHERE h.owner_id=? AND h.at<=? "
-        "AND h.id=(SELECT MAX(v.id) FROM ranking_class_history v WHERE v.owner_id=h.owner_id "
-        "AND v.class_id=h.class_id AND v.at<=?) AND h.active=1 ORDER BY h.class_id",
+        "AND h.id=(SELECT v.id FROM ranking_class_history v WHERE v.owner_id=h.owner_id "
+        "AND v.class_id=h.class_id AND v.at<=? ORDER BY v.at DESC,v.id DESC LIMIT 1) "
+        "AND h.active=1 ORDER BY h.class_id",
         (owner_id, cutoff, cutoff),
     ).fetchall()
     groups = db.execute(
         "SELECT h.* FROM ranking_group_history h WHERE h.owner_id=? AND h.at<=? "
-        "AND h.id=(SELECT MAX(v.id) FROM ranking_group_history v WHERE v.owner_id=h.owner_id "
-        "AND v.group_id=h.group_id AND v.at<=?) AND h.active=1 ORDER BY h.sort_order,h.group_id",
+        "AND h.id=(SELECT v.id FROM ranking_group_history v WHERE v.owner_id=h.owner_id "
+        "AND v.group_id=h.group_id AND v.at<=? ORDER BY v.at DESC,v.id DESC LIMIT 1) "
+        "AND h.active=1 ORDER BY h.sort_order,h.group_id",
         (owner_id, cutoff, cutoff),
     ).fetchall()
     return [{"name": c["name"], "groups": [{"name": g["name"], "score": g["score"]}
