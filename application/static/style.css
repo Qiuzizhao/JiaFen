@@ -885,8 +885,15 @@ html { -webkit-text-size-adjust: 100%; }
 .reward-settings-trigger span { font-size: 17px; line-height: 1; }
 .reward-controls { display: flex; gap: 8px; }
 .archives-box { width: min(720px, 100%); max-height: 86vh; overflow-y: auto; }
-.archives-toolbar { display: flex; gap: 10px; margin: 14px 0; }
-.archives-toolbar select { flex: 1; min-width: 0; }
+.archives-toolbar { display: flex; align-items: flex-end; gap: 10px; margin: 14px 0; }
+.archives-switcher { flex: 1; min-width: 0; }
+.archives-switcher label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+.archives-switcher select { width: 100%; min-width: 0; }
+.archives-switch-actions { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.archives-switch-actions button { padding: 2px 12px; font-size: 20px; }
+.archives-switch-actions button:disabled { opacity: .35; cursor: default; }
+#archives-position { font-size: 12px; color: var(--muted); min-width: 44px; text-align: center; }
+.archives-toolbar > button { align-self: flex-start; margin-top: 22px; }
 .archives-toolbar button { flex: none; }
 .archives-box .err:empty, .archive-create-box .err:empty { display: none; }
 .archive-create-box { width: min(390px, 100%); }
@@ -895,7 +902,6 @@ html { -webkit-text-size-adjust: 100%; }
 .archive-create-box #archive-available { margin: 10px 0; font-size: 12px; }
 .archives-box .archive-rank-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 14px; }
 .archive-class-nav { margin-top: 4px; }
-.archive-rank-list .lb-item { padding: 12px 4px; }
 .archive-rank-list .lb-name { white-space: normal; overflow-wrap: anywhere; }
 .archives-box .archive-cutoff-label { margin: 0 0 14px; font-size: 12px; }
 .archive-rank-tabs button { min-width: 0; flex: 1; }

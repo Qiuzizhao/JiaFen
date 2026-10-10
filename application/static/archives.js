@@ -24,22 +24,28 @@
   function renderRanking() {
     const data = archiveState.data;
     if (!data) return;
-    const classes = data.classes;
+    const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16', '#f97316'];
+    const classes = data.classes.map(c => ({ ...c, groups: c.groups.map((g, i) => ({ ...g, color: g.color || colors[i % colors.length] })) }));
     const mode = archiveState.mode;
     let items = [];
-    if (mode === 'school') items = classes.flatMap(c => c.groups.map(g => ({ name: `${c.name} ${g.name}`, score: g.score })));
-    else if (mode === 'classes') items = classes.map(c => ({ name: c.name, score: c.groups.reduce((sum, g) => sum + g.score, 0) }));
+    if (mode === 'school') items = classes.flatMap(c => c.groups.map(g => ({ name: `${c.name} · ${g.name}`, score: g.score, color: g.color })));
+    else if (mode === 'classes') items = classes.map(c => ({ name: c.name, color: c.groups[0]?.color || colors[0], score: c.groups.reduce((sum, g) => sum + g.score, 0) }));
     else items = classes[archiveState.classIndex]?.groups || [];
     const sorted = [...items].sort((a, b) => b.score - a.score);
     $('#archives-detail').innerHTML = `
       <p class="archive-cutoff-label">截止 ${esc(displayTime(data.cutoff_at))}（北京时间）</p>
-      <div class="reward-tabs archive-rank-tabs" role="tablist" aria-label="归档排名">
+      <div class="lb-toggle archive-rank-tabs" role="tablist" aria-label="归档排名">
         ${[['class','全班'],['school','全校'],['classes','班级']].map(([value,label]) => `<button type="button" role="tab" aria-selected="${mode === value}" data-archive-mode="${value}" class="${mode === value ? 'on' : ''}">${label}</button>`).join('')}
       </div>
       ${mode === 'class' ? `<nav class="reward-class-nav archive-class-nav" aria-label="选择班级">${classes.map((c,i) => `<button type="button" class="reward-class-chip ${i === archiveState.classIndex ? 'on' : ''}" data-archive-class="${i}" aria-pressed="${i === archiveState.classIndex}">${esc(c.name)}</button>`).join('')}</nav>` : ''}
-      <div class="archive-rank-list">${sorted.length ? sorted.map((item,i) => `<div class="lb-item ${i < 3 ? 'rank'+(i+1) : ''}"><span class="rank">${['🥇','🥈','🥉'][i] || i+1}</span><span class="lb-name">${esc(item.name)}</span><span class="lb-score">${item.score}</span></div>`).join('') : '<div class="empty">暂无小组</div>'}</div>`;
+      <div class="leaderboard archive-rank-list">${sorted.length ? sorted.map((item,i) => `<div class="lb-item ${i < 3 ? 'rank'+(i+1) : ''}" style="--c:${esc(item.color)}"><span class="rank">${['🥇','🥈','🥉'][i] || i+1}</span><span class="dot"></span><span class="lb-name">${esc(item.name)}</span><span class="lb-score">${item.score}</span></div>`).join('') : '<div class="empty">暂无小组</div>'}</div>`;
   }
   async function loadArchive(id) {
+    $('#archives-select').value = String(id);
+    const index = archiveState.list.findIndex(a => String(a.id) === String(id));
+    $('#archives-prev').disabled = index <= 0;
+    $('#archives-next').disabled = index < 0 || index >= archiveState.list.length - 1;
+    $('#archives-position').textContent = index >= 0 ? `${index + 1} / ${archiveState.list.length}` : '';
     const version = ++archiveState.request;
     archiveState.data = null;
     $('#archives-error').textContent = '';
@@ -48,8 +54,7 @@
       const data = await api(`/api/archives/${id}`);
       if (version !== archiveState.request) return;
       archiveState.data = data;
-      archiveState.classIndex = 0;
-      archiveState.mode = 'class';
+      archiveState.classIndex = Math.min(archiveState.classIndex, Math.max(0, data.classes.length - 1));
       renderRanking();
     } catch (e) {
       if (version !== archiveState.request) return;
@@ -61,8 +66,11 @@
     const data = await api('/api/archives');
     archiveState.list = data.archives;
     archiveState.availableFrom = data.available_from;
-    $('#archives-select').innerHTML = data.archives.length ? data.archives.map(a => `<option value="${a.id}">${esc(a.title)}</option>`).join('') : '<option value="">暂无归档</option>';
+    $('#archives-select').innerHTML = data.archives.length ? data.archives.map(a => `<option value="${a.id}">${esc(a.title)} · ${esc(displayTime(a.cutoff_at))}</option>`).join('') : '<option value="">暂无归档</option>';
     $('#archives-select').disabled = !data.archives.length;
+    $('#archives-prev').disabled = true;
+    $('#archives-next').disabled = true;
+    $('#archives-position').textContent = '';
     const id = selectedId || data.archives[0]?.id;
     if (id) {
       $('#archives-select').value = String(id);
@@ -90,6 +98,13 @@
   });
   $('#archives-close').addEventListener('click', closeArchives);
   $('#archives-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeArchives(); });
+  [['archives-prev', -1], ['archives-next', 1]].forEach(([button, offset]) => {
+    $('#' + button).addEventListener('click', () => {
+      const index = archiveState.list.findIndex(a => String(a.id) === $('#archives-select').value);
+      const target = archiveState.list[index + offset];
+      if (target) loadArchive(target.id);
+    });
+  });
   $('#archives-select').addEventListener('change', e => { if (e.target.value) loadArchive(e.target.value); });
   $('#archives-detail').addEventListener('click', e => {
     const mode = e.target.closest('[data-archive-mode]');
