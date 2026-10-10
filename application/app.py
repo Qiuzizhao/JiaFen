@@ -87,8 +87,10 @@ def record_reward_milestones(db, group_id):
         threshold = max(step, (previous // step + 1) * step)
         while threshold <= score:
             db.execute(
-                "INSERT OR IGNORE INTO reward_opportunities(group_id, threshold) VALUES(?,?)",
-                (group_id, threshold),
+                "INSERT OR IGNORE INTO reward_opportunities(group_id, threshold) "
+                "SELECT ?,? WHERE NOT EXISTS "
+                "(SELECT 1 FROM reward_locks WHERE owner_id=? AND threshold=?)",
+                (group_id, threshold, group["owner_id"], threshold),
             )
             threshold += step
     db.execute(
@@ -170,6 +172,12 @@ def init_db():
         CREATE TABLE IF NOT EXISTS reward_progress (
             group_id INTEGER PRIMARY KEY REFERENCES groups(id) ON DELETE CASCADE,
             max_score INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS reward_locks (
+            owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            threshold INTEGER NOT NULL CHECK(threshold>0),
+            PRIMARY KEY(owner_id, threshold)
         );
 
         CREATE TABLE IF NOT EXISTS reward_opportunities (
@@ -1198,7 +1206,37 @@ def list_rewards():
                 "opportunities": [dict(op) for op in opportunities],
             })
         result.append({**dict(cls), "groups": group_result})
-    return jsonify({"step": reward_step_for_user(db, u["id"]), "classes": result})
+    locks = [row[0] for row in db.execute(
+        "SELECT threshold FROM reward_locks WHERE owner_id=? ORDER BY threshold", (u["id"],)
+    )]
+    return jsonify({"step": reward_step_for_user(db, u["id"]), "locked_thresholds": locks, "classes": result})
+
+
+@app.route("/api/rewards/locks/<int:threshold>", methods=["PUT"])
+@login_required
+def update_reward_lock(threshold):
+    data = request.get_json(silent=True) or {}
+    if type(data.get("locked")) is not bool or not 1 <= threshold <= 2147483647:
+        return jsonify({"error": "无效的锁定设置"}), 400
+    db = get_db()
+    u = current_user()
+    db.execute("BEGIN IMMEDIATE")
+    current = bool(db.execute(
+        "SELECT 1 FROM reward_locks WHERE owner_id=? AND threshold=?", (u["id"], threshold)
+    ).fetchone())
+    if type(data.get("expected_locked")) is bool and data["expected_locked"] != current:
+        db.rollback()
+        return jsonify({"error": "锁定状态已变更，请重试"}), 409
+    if threshold % reward_step_for_user(db, u["id"]):
+        db.rollback()
+        return jsonify({"error": "奖励档位已变更，请重新打开窗口"}), 409
+    if data["locked"]:
+        db.execute("INSERT OR IGNORE INTO reward_locks VALUES(?,?)", (u["id"], threshold))
+    else:
+        db.execute("DELETE FROM reward_locks WHERE owner_id=? AND threshold=?", (u["id"], threshold))
+    db.commit()
+    broadcast({"kind": "rewards", "client": (data.get("client") or "")[:32]})
+    return jsonify({"ok": True})
 
 
 @app.route("/api/rewards/groups/<int:gid>/opportunities", methods=["POST"])
@@ -1359,12 +1397,15 @@ def export_data():
                 "students": [dict(s) for s in students],
             }
         )
-    # version 4：增加手动机会及备注；旧版备份仍可导入。
+    # version 5：增加账号的奖励锁定档位；旧版备份仍可导入。
     return jsonify(
         {
-            "version": 4,
+            "version": 5,
             "exported_at": datetime.now().isoformat(),
             "reward_step": reward_step_for_user(db, u["id"]),
+            "reward_locked_thresholds": [row[0] for row in db.execute(
+                "SELECT threshold FROM reward_locks WHERE owner_id=? ORDER BY threshold", (u["id"],)
+            )],
             "classes": data,
         }
     )
@@ -1377,6 +1418,12 @@ def import_data():
     classes = data.get("classes", [])
     db = get_db()
     u = current_user()
+    if "reward_locked_thresholds" in data:
+        locks = data["reward_locked_thresholds"]
+        if not isinstance(locks, list) or any(type(v) is not int or not 1 <= v <= 2147483647 for v in locks):
+            return jsonify({"error": "备份中的奖励锁定设置无效"}), 400
+        db.execute("DELETE FROM reward_locks WHERE owner_id=?", (u["id"],))
+        db.executemany("INSERT OR IGNORE INTO reward_locks VALUES(?,?)", [(u["id"], v) for v in locks])
     try:
         backup_step = int(data.get("reward_step", 0))
     except (TypeError, ValueError):

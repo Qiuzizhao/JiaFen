@@ -14,7 +14,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png?v=20260915">
   <link rel="icon" href="/favicon.ico?v=20260915" sizes="any">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=20260915">
-  <link rel="stylesheet" href="/style.css?v=20261009a">
+  <link rel="stylesheet" href="/style.css?v=20261010a">
 </head>
 <body>
 
@@ -67,7 +67,10 @@
           <button type="button" class="on" data-reward-mode="class" role="tab" aria-selected="true">按班级</button>
           <button type="button" data-reward-mode="pending" role="tab" aria-selected="false">待奖励</button>
         </div>
-        <button id="reward-settings-open" class="ghost reward-settings-trigger" type="button" aria-haspopup="dialog" aria-controls="reward-settings-modal"><span aria-hidden="true">⚙</span> 设置</button>
+        <div class="reward-controls">
+          <button id="reward-lock-open" class="ghost reward-settings-trigger" type="button" aria-haspopup="dialog" aria-controls="reward-lock-modal">锁定</button>
+          <button id="reward-settings-open" class="ghost reward-settings-trigger" type="button" aria-haspopup="dialog" aria-controls="reward-settings-modal"><span aria-hidden="true">⚙</span> 设置</button>
+        </div>
       </div>
       <nav id="reward-class-nav" class="reward-class-nav" aria-label="选择班级"></nav>
       <div id="reward-content" class="reward-content"></div>
@@ -141,6 +144,29 @@
   <div id="class-backdrop" class="class-backdrop"></div>
 
   <!-- 奖励设置 -->
+  <div id="reward-lock-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="reward-lock-title">
+    <div class="modal-box reward-lock-box">
+      <div class="modal-head">
+        <h3 id="reward-lock-title">奖励锁定</h3>
+        <button id="reward-lock-close" class="icon-btn" type="button" aria-label="关闭">✕</button>
+      </div>
+      <p class="muted small">亮色为解锁，灰色为锁定。已有机会保留。</p>
+      <div id="reward-lock-tiers" class="reward-lock-tiers"></div>
+      <p id="reward-lock-error" class="err" role="alert"></p>
+      <button id="reward-lock-more" class="ghost" type="button">更多档位</button>
+    </div>
+  </div>
+  <div id="reward-lock-confirm" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="reward-lock-confirm-title">
+    <div class="modal-box reward-confirm-box">
+      <h3 id="reward-lock-confirm-title">确认锁定？</h3>
+      <p id="reward-lock-confirm-detail" class="reward-confirm-detail"></p>
+      <p class="muted small">所有班级此档位不再发放新机会，已有机会保留。</p>
+      <div class="modal-actions">
+        <button id="reward-lock-cancel" class="ghost" type="button">取消</button>
+        <button id="reward-lock-accept" class="primary" type="button">确认锁定</button>
+      </div>
+    </div>
+  </div>
   <div id="reward-settings-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="reward-settings-title">
     <div class="modal-box reward-settings-box">
       <div class="modal-head">
@@ -286,6 +312,6 @@
     <div id="projector-board" class="projector-board"></div>
   </div>
 
-  <script src="/app.js?v=20260925r"></script>
+  <script src="/app.js?v=20261010a"></script>
 </body>
 </html>

@@ -22,6 +22,9 @@ const state = {
   rewardConfirmCompleted: null,
   rewardAddGroupId: null,
   rewardReturnY: 0,
+  rewardLockLimit: 10,
+  rewardLockPending: null,
+  rewardLockBusy: false,
   // 班级名单弹窗的状态（展开哪一行的菜单、批量导入面板是否打开等）
   rosterOpen: false,
   rosterMenu: null,
@@ -72,6 +75,68 @@ function openRewardSettings() {
   $('#reward-settings-modal').classList.remove('hidden');
   $('#reward-step').focus();
   $('#reward-step').select();
+}
+
+function renderRewardLocks() {
+  if (!state.rewardData || $('#reward-lock-modal').classList.contains('hidden')) return;
+  const step = Number(state.rewardData.step);
+  const locked = new Set(state.rewardData.locked_thresholds || []);
+  const thresholds = new Set(Array.from({ length: state.rewardLockLimit }, (_, i) => (i + 1) * step));
+  locked.forEach(n => { if (n % step === 0) thresholds.add(n); });
+  $('#reward-lock-tiers').innerHTML = [...thresholds].sort((a, b) => a - b).map(n => {
+    const isLocked = locked.has(n);
+    return `<button type="button" class="reward-token ${isLocked ? 'completed' : ''}" data-lock-tier="${n}" data-locked="${isLocked}" aria-pressed="${isLocked}" aria-label="${n}分，${isLocked ? '已锁定，点击解锁' : '已解锁，点击锁定'}" ${state.rewardLockBusy ? 'disabled' : ''}><span class="reward-token-disc" aria-hidden="true">✦</span><span class="reward-token-threshold">${n} 分</span></button>`;
+  }).join('');
+  $('#reward-lock-more').disabled = state.rewardLockBusy;
+  const pending = state.rewardLockPending;
+  if (pending && (pending.step !== step || locked.has(pending.threshold))) closeRewardLockConfirm();
+}
+
+function openRewardLocks() {
+  if (!state.rewardData) return;
+  state.rewardLockLimit = 10;
+  $('#reward-lock-error').textContent = '';
+  $('#reward-lock-modal').classList.remove('hidden');
+  renderRewardLocks();
+  $('#reward-lock-close').focus();
+}
+
+function closeRewardLockConfirm() {
+  const threshold = state.rewardLockPending?.threshold;
+  state.rewardLockPending = null;
+  $('#reward-lock-confirm').classList.add('hidden');
+  document.querySelector(`[data-lock-tier="${threshold}"]`)?.focus();
+}
+
+function closeRewardLocks(restoreFocus = true) {
+  if (state.rewardLockBusy) return;
+  closeRewardLockConfirm();
+  $('#reward-lock-modal').classList.add('hidden');
+  if (restoreFocus) $('#reward-lock-open').focus();
+}
+
+async function saveRewardLock(threshold, locked) {
+  if (state.rewardLockBusy) return;
+  state.rewardLockBusy = true;
+  $('#reward-lock-error').textContent = '';
+  $('#reward-lock-accept').disabled = true;
+  renderRewardLocks();
+  try {
+    await api(`/api/rewards/locks/${threshold}`, {
+      method: 'PUT', body: { locked, expected_locked: !locked, client: CLIENT_ID },
+    });
+    closeRewardLockConfirm();
+    await refreshRewards();
+  } catch (e) {
+    closeRewardLockConfirm();
+    $('#reward-lock-error').textContent = e.message;
+    await refreshRewards();
+  } finally {
+    state.rewardLockBusy = false;
+    $('#reward-lock-accept').disabled = false;
+    renderRewardLocks();
+    document.querySelector(`[data-lock-tier="${threshold}"]`)?.focus();
+  }
 }
 
 function closeRewardSettings(restoreFocus = true) {
@@ -169,6 +234,7 @@ async function toggleRewardsPage() {
   const opening = !state.rewardOpen;
   if (opening) state.rewardReturnY = window.scrollY;
   else {
+    closeRewardLocks(false);
     closeRewardSettings(false);
     closeRewardConfirm(false);
     closeRewardAdd(false);
@@ -196,6 +262,7 @@ async function refreshRewards() {
       state.rewardClassId = current ? current.id : (state.rewardData.classes[0]?.id || null);
     }
     renderRewardsPage();
+    renderRewardLocks();
     if (state.rewardConfirmId) {
       const current = findRewardOpportunity(state.rewardConfirmId);
       if (!current || !!current.opportunity.completed !== state.rewardConfirmCompleted) closeRewardConfirm();
@@ -2626,6 +2693,32 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   renderVoiceButtons();
   $('#btn-rewards').addEventListener('click', toggleRewardsPage);
+  $('#reward-lock-open').addEventListener('click', openRewardLocks);
+  $('#reward-lock-close').addEventListener('click', () => closeRewardLocks());
+  $('#reward-lock-modal').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeRewardLocks();
+  });
+  $('#reward-lock-more').addEventListener('click', () => {
+    state.rewardLockLimit += 10;
+    renderRewardLocks();
+  });
+  $('#reward-lock-tiers').addEventListener('click', e => {
+    const button = e.target.closest('[data-lock-tier]');
+    if (!button || state.rewardLockBusy) return;
+    const threshold = Number(button.dataset.lockTier);
+    if (button.dataset.locked === 'true') { saveRewardLock(threshold, false); return; }
+    state.rewardLockPending = { threshold, step: Number(state.rewardData.step) };
+    $('#reward-lock-confirm-detail').textContent = `${threshold} 分奖励`;
+    $('#reward-lock-confirm').classList.remove('hidden');
+    $('#reward-lock-accept').focus();
+  });
+  $('#reward-lock-cancel').addEventListener('click', () => { if (!state.rewardLockBusy) closeRewardLockConfirm(); });
+  $('#reward-lock-confirm').addEventListener('click', e => {
+    if (e.target === e.currentTarget && !state.rewardLockBusy) closeRewardLockConfirm();
+  });
+  $('#reward-lock-accept').addEventListener('click', () => {
+    if (state.rewardLockPending) saveRewardLock(state.rewardLockPending.threshold, true);
+  });
   $('#reward-settings-open').addEventListener('click', openRewardSettings);
   $('#reward-settings-close').addEventListener('click', () => closeRewardSettings());
   $('#reward-settings-cancel').addEventListener('click', () => closeRewardSettings());
@@ -2643,6 +2736,14 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.target === e.currentTarget) closeRewardAdd();
   });
   document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && !$('#reward-lock-confirm').classList.contains('hidden')) {
+      if (!state.rewardLockBusy) closeRewardLockConfirm();
+      return;
+    }
+    if (e.key === 'Escape' && !$('#reward-lock-modal').classList.contains('hidden')) {
+      closeRewardLocks();
+      return;
+    }
     if (e.key === 'Escape' && !$('#reward-settings-modal').classList.contains('hidden')) closeRewardSettings();
     if (e.key === 'Escape' && !$('#reward-confirm-modal').classList.contains('hidden')) closeRewardConfirm();
     if (e.key === 'Escape' && !$('#reward-add-modal').classList.contains('hidden')) closeRewardAdd();
