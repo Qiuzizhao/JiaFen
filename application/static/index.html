@@ -14,7 +14,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png?v=20260915">
   <link rel="icon" href="/favicon.ico?v=20260915" sizes="any">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=20260915">
-  <link rel="stylesheet" href="/style.css?v=20261010c">
+  <link rel="stylesheet" href="/style.css?v=20261010d">
 </head>
 <body>
 
@@ -151,20 +151,16 @@
         <h3 id="archives-title">积分归档</h3>
         <button id="archives-close" class="icon-btn" type="button" aria-label="关闭">✕</button>
       </div>
-      <div class="archives-toolbar">
-        <div class="archives-switcher">
-          <label for="archives-select">选择归档</label>
-          <select id="archives-select" aria-label="选择归档"></select>
-          <div class="archives-switch-actions">
-            <button id="archives-prev" class="ghost" type="button" aria-label="上一份归档" disabled>‹</button>
-            <span id="archives-position" aria-live="polite"></span>
-            <button id="archives-next" class="ghost" type="button" aria-label="下一份归档" disabled>›</button>
-          </div>
-        </div>
-        <button id="archives-new" class="primary" type="button">新建归档</button>
+      <div class="archives-layout">
+        <aside class="archives-sidebar" aria-label="归档列表">
+          <button id="archives-new" class="primary" type="button"><span aria-hidden="true">＋</span> 新建归档</button>
+          <nav id="archives-list" class="archives-list" aria-label="选择归档"></nav>
+        </aside>
+        <section class="archives-content" aria-label="归档排行榜">
+          <p id="archives-error" class="err" role="alert"></p>
+          <div id="archives-detail"></div>
+        </section>
       </div>
-      <p id="archives-error" class="err" role="alert"></p>
-      <div id="archives-detail"></div>
     </div>
   </div>
   <div id="archive-create-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="archive-create-title">
@@ -353,7 +349,7 @@
     <div id="projector-board" class="projector-board"></div>
   </div>
 
-  <script src="/app.js?v=20261010c"></script>
-  <script src="/archives.js?v=20261010c"></script>
+  <script src="/app.js?v=20261010d"></script>
+  <script src="/archives.js?v=20261010d"></script>
 </body>
 </html>

@@ -884,17 +884,41 @@ html { -webkit-text-size-adjust: 100%; }
 .reward-settings-trigger { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 40px; font-size: 13px; font-weight: 600; white-space: nowrap; }
 .reward-settings-trigger span { font-size: 17px; line-height: 1; }
 .reward-controls { display: flex; gap: 8px; }
-.archives-box { width: min(720px, 100%); max-height: 86vh; overflow-y: auto; }
-.archives-toolbar { display: flex; align-items: flex-end; gap: 10px; margin: 14px 0; }
-.archives-switcher { flex: 1; min-width: 0; }
-.archives-switcher label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
-.archives-switcher select { width: 100%; min-width: 0; }
-.archives-switch-actions { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
-.archives-switch-actions button { padding: 2px 12px; font-size: 20px; }
-.archives-switch-actions button:disabled { opacity: .35; cursor: default; }
-#archives-position { font-size: 12px; color: var(--muted); min-width: 44px; text-align: center; }
-.archives-toolbar > button { align-self: flex-start; margin-top: 22px; }
-.archives-toolbar button { flex: none; }
+.archives-box { width: min(960px, 100%); height: min(760px, 86vh); display: flex; flex-direction: column; overflow: hidden; padding: 0; }
+.archives-box > .modal-head { flex: none; padding: 20px 24px; border-bottom: 1px solid var(--border, #e5e7eb); }
+.archives-box > .modal-head h3 { margin: 0; }
+.archives-layout { display: grid; grid-template-columns: 240px minmax(0, 1fr); flex: 1; min-height: 0; }
+.archives-sidebar { display: flex; flex-direction: column; gap: 16px; padding: 20px 16px; min-height: 0; background: #f6f8fc; border-right: 1px solid var(--border, #e5e7eb); }
+.archives-sidebar > button { width: 100%; flex: none; }
+.archives-list { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; min-height: 0; padding: 3px; }
+.archive-tile { display: flex; align-items: center; gap: 12px; width: 100%; padding: 14px 12px; text-align: left; color: var(--muted); background: transparent; border: 1px solid transparent; border-radius: 12px; }
+.archive-tile:hover { background: #edf2fa; }
+.archive-tile.on { background: #e3edff; color: var(--brand-dark); border-color: #c7dafe; }
+.archive-tile:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+.archive-tile-icon { flex: none; width: 34px; height: 34px; }
+.archive-tile-icon svg { display: block; width: 100%; height: 100%; }
+.archive-tile-info { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.archive-tile-name { color: var(--text); font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.archive-tile.on .archive-tile-name { color: var(--brand-dark); }
+.archive-tile-time { font-size: 11px; line-height: 1.5; }
+.archives-content { min-width: 0; overflow-y: auto; padding: 24px; }
+.archive-detail-title { margin: 0 0 6px; font-size: 18px; overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+  .archives-box { height: 88vh; max-height: 88vh; }
+  .archives-box > .modal-head { padding: 14px 16px; }
+  .archives-layout { grid-template-columns: 104px minmax(0, 1fr); }
+  .archives-sidebar { padding: 12px 6px; gap: 12px; }
+  .archives-sidebar > button { padding: 10px 4px; font-size: 12px; }
+  .archive-tile { flex-direction: column; gap: 8px; padding: 12px 6px; text-align: center; }
+  .archive-tile-name { font-size: 11px; }
+  .archive-tile-time { font-size: 10px; }
+  .archives-content { padding: 14px 10px; }
+  .archive-detail-title { font-size: 15px; }
+  .archives-box .archive-rank-tabs button { padding: 8px 3px; font-size: 12px; }
+  .archive-rank-list .lb-item { padding: 8px 6px; gap: 6px; font-size: 12px; }
+  .archive-rank-list .lb-item .rank { width: 24px; }
+  .archive-rank-list .lb-item .dot { width: 8px; height: 8px; }
+}
 .archives-box .err:empty, .archive-create-box .err:empty { display: none; }
 .archive-create-box { width: min(390px, 100%); }
 .archive-create-box label { display: block; margin: 16px 0 7px; font-size: 13px; font-weight: 600; }
