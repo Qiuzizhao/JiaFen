@@ -1107,6 +1107,7 @@ function renderSyncStatus() {
 function openSSE() {
   if (es) es.close();
   es = new EventSource('/api/events');
+  const handledEvents = new Set();
 
   es.addEventListener('connected', (ev) => {
     sseOpened++;
@@ -1125,16 +1126,22 @@ function openSSE() {
     lastSseAt = Date.now();
     let data = {};
     try { data = JSON.parse(ev.data || '{}'); } catch (_) { data = {}; }
+    let needsReconcile = false;
     if (typeof data.seq === 'number') {
-      // 序号跳号=漏事件；序号变小=服务端重启。两种情况都整页对账。
-      if (lastSeq && (data.seq > lastSeq + 1 || data.seq < lastSeq)) {
-        lastSeq = data.seq;
-        refresh();
-        return;
-      }
+      // 全局序号也包含其他账号的操作；跳号时核对数据，但不能丢掉当前事件的播报。
+      // 时间与序号共同去重，服务重启后序号复用仍可正常处理。
+      const eventId = data.seq + ':' + (data.time || '');
+      if (handledEvents.has(eventId)) return;
+      handledEvents.add(eventId);
+      if (handledEvents.size > 128) handledEvents.delete(handledEvents.values().next().value);
+      needsReconcile = !!lastSeq && (data.seq > lastSeq + 1 || data.seq < lastSeq);
       lastSeq = data.seq;
     }
+    sseConnected = true;
+    renderSyncStatus();
     handleRemoteUpdate(data);
+    // 先处理当前事件（包括播报），再从服务器核对最终分数与历史。
+    if (needsReconcile) refresh();
   });
 
   es.addEventListener('ping', () => {
