@@ -1094,14 +1094,14 @@ let sseConnected = false;
 let pendingOps = 0;
 
 function renderSyncStatus() {
-  const el = $('#sync-status');
-  if (!el) return;
   let cls = 'synced', text = '已同步', title = '实时同步已连接';
   if (!sseConnected) { cls = 'offline'; text = '未连接'; title = '实时同步连接中断，正在重连…'; }
   else if (pendingOps > 0) { cls = 'syncing'; text = '同步中…'; title = '正在保存到服务器'; }
-  el.className = 'sync-status ' + cls;
-  el.textContent = text;
-  el.title = title;
+  document.querySelectorAll('.sync-status').forEach(el => {
+    el.className = 'sync-status ' + cls;
+    el.textContent = text;
+    el.title = title;
+  });
 }
 
 function openSSE() {
