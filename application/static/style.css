@@ -799,7 +799,7 @@ html { -webkit-text-size-adjust: 100%; }
 
 @media (max-width: 720px) {
   .topbar {
-    padding-top: calc(10px + env(safe-area-inset-top, 0px));
+    padding-top: calc(6px + env(safe-area-inset-top, 0px));
     padding-left: calc(14px + env(safe-area-inset-left, 0px));
     padding-right: calc(14px + env(safe-area-inset-right, 0px));
   }
@@ -833,10 +833,11 @@ html { -webkit-text-size-adjust: 100%; }
    5. 登录框与弹窗可滚动，软键盘弹出时不会被顶出屏幕
 --------------------------------------------------------------------------- */
 @media (max-width: 720px) {
+  .topbar { gap: 4px; padding-bottom: 6px; }
   .actions { gap: 6px; scrollbar-width: none; }
   .actions::-webkit-scrollbar { display: none; }
   /* 顶栏按钮保持单行横向滚动，避免窄屏时挤压页面 */
-  .actions .ghost { padding: 10px 10px; font-size: 14px; }
+  .actions .ghost { padding: 8px 10px; font-size: 14px; }
   .who-btn { max-width: 96px; }
 
   .qbtn { padding: 12px 0; font-size: 15px; }
@@ -859,9 +860,12 @@ html { -webkit-text-size-adjust: 100%; }
   .proj-tools {
     position: static;
     justify-content: flex-end;
-    margin-bottom: 10px;
+    flex-wrap: nowrap;
+    gap: 6px;
+    margin-bottom: 8px;
   }
-  .proj-tools .close-btn { padding: 10px 14px; font-size: 15px; min-height: 44px; }
+  .proj-tools .sync-status { margin-right: auto; font-size: 11px; padding: 3px 7px; flex: none; }
+  .proj-tools .close-btn { padding: 8px; font-size: 12px; min-height: 36px; white-space: nowrap; }
   .projector-title { padding: 0; margin-bottom: 12px; }
 
   .proj-card { padding: 14px; }
