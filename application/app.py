@@ -101,10 +101,20 @@ def record_reward_milestones(db, group_id):
 
 
 @app.after_request
-def disable_static_cache(resp):
-    # 页面与静态资源不做缓存，避免 Cloudflare/浏览器拿到旧版前端
-    if not request.path.startswith("/api/"):
-        resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+def configure_response_cache(resp):
+    # 界面代码与业务数据分离：只缓存可复用的静态资源，数据始终从服务器获取。
+    if request.path.startswith("/api/") or resp.status_code >= 400:
+        resp.headers["Cache-Control"] = "no-store"
+    elif resp.mimetype == "text/html":
+        if "shell_reload" in request.args:
+            resp.headers["Cache-Control"] = "private, no-cache"
+        else:
+            resp.headers["Cache-Control"] = "private, max-age=300, stale-while-revalidate=86400"
+    elif request.endpoint == "static" and request.args.get("v"):
+        resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    else:
+        # 未加版本号的资源可保存，以 ETag / Last-Modified 检查是否变化。
+        resp.headers["Cache-Control"] = "no-cache"
     return resp
 
 
