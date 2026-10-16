@@ -834,6 +834,7 @@ html { -webkit-text-size-adjust: 100%; }
 --------------------------------------------------------------------------- */
 @media (max-width: 720px) {
   .topbar { gap: 4px; padding-bottom: 6px; }
+  html.jiafen-app-shell .topbar { padding-top: 6px; }
   .actions { gap: 6px; scrollbar-width: none; }
   .actions::-webkit-scrollbar { display: none; }
   /* 顶栏按钮保持单行横向滚动，避免窄屏时挤压页面 */

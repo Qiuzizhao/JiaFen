@@ -1,4 +1,8 @@
 const $ = (s) => document.querySelector(s);
+// App 已在 body 留出状态栏安全区，顶栏不再重复叠加同一段高度。
+if (document.getElementById('jiafen-shell-safe-area')) {
+  document.documentElement.classList.add('jiafen-app-shell');
+}
 const PALETTE = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#ec4899','#84cc16','#f97316','#14b8a6'];
 let colorIndex = 0;
 
