@@ -43,7 +43,7 @@
   <!-- 主界面 -->
   <div id="app" class="hidden">
     <header class="topbar">
-      <div class="brand">课堂小组积分 <span id="sync-status" class="sync-status syncing" title="正在连接实时同步">同步中…</span></div>
+      <div class="brand">课堂小组积分 <span id="sync-status" class="sync-status offline" title="正在后台连接并核对数据">未同步</span></div>
       <div class="actions">
         <button id="btn-rewards" class="ghost" aria-pressed="false">奖励</button>
         <button id="btn-archives" class="ghost" type="button" aria-haspopup="dialog" aria-controls="archives-modal">归档</button>
@@ -342,7 +342,7 @@
   <!-- 投屏模式 -->
   <div id="projector" class="hidden">
     <div class="proj-tools">
-      <span id="projector-sync-status" class="sync-status syncing" role="status" title="正在连接实时同步">同步中…</span>
+      <span id="projector-sync-status" class="sync-status offline" role="status" title="正在后台连接并核对数据">未同步</span>
       <button id="projector-voice" class="close-btn">🔈 语音：关</button>
       <button id="projector-close" class="close-btn">✕ 退出投屏</button>
     </div>
@@ -350,7 +350,7 @@
     <div id="projector-board" class="projector-board"></div>
   </div>
 
-  <script src="/app.js?v=20261015a"></script>
+  <script src="/app.js?v=20261016b"></script>
   <script src="/archives.js?v=20261010d"></script>
 </body>
 </html>

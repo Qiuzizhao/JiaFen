@@ -4,6 +4,9 @@ let colorIndex = 0;
 
 // 本设备的随机标识：服务端广播变更时带上它，用来忽略自己触发的回显
 const CLIENT_ID = Math.random().toString(36).slice(2, 10);
+let sessionVerified = false;
+let dataReady = false;
+let startupCheckingEnabled = true;
 
 const state = {
   authed: false,
@@ -402,19 +405,39 @@ async function api(path, opts = {}) {
     cfg.headers['Content-Type'] = 'application/json';
   }
   const mutating = (cfg.method || 'GET').toUpperCase() !== 'GET';
+  const authRequest = /^\/api\/(login|register|logout)(?:[?#]|$)/.test(path);
+  if (mutating && !authRequest && (!sessionVerified || !dataReady)) {
+    if (window.ReactNativeWebView) {
+      window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'operation-blocked' }));
+    }
+    throw new Error('当前未连接，该操作未生效。正在尝试重连，请连接恢复后重试。');
+  }
   if (mutating) { pendingOps++; renderSyncStatus(); }
+  const controller = !mutating && !cfg.signal ? new AbortController() : null;
+  const timeout = controller ? setTimeout(() => controller.abort(), 8000) : null;
+  if (controller) cfg.signal = controller.signal;
+  let succeeded = false;
   try {
     const res = await fetch(path, cfg);
     if (res.status === 401) { showLogin(); throw new Error('未登录'); }
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || '请求失败');
+    succeeded = true;
     return data;
   } finally {
+    if (timeout !== null) clearTimeout(timeout);
     if (mutating) { pendingOps--; renderSyncStatus(); }
+    if (mutating && succeeded) scheduleStartupSnapshot();
   }
 }
 
 function showLogin() {
+  startupCheckingEnabled = false;
+  clearStartupSnapshot();
+  sessionVerified = false;
+  dataReady = false;
+  sseConnected = false;
+  if (es) es.close();
   state.authed = false;
   state.user = null;
   $('#app').classList.add('hidden');
@@ -423,6 +446,7 @@ function showLogin() {
   $('#reg-pw').value = '';
   showLoginView(true);
   $('#login-err').textContent = '';
+  renderSyncStatus();
 }
 function showApp() {
   $('#login').classList.add('hidden');
@@ -707,6 +731,63 @@ let refreshing = false;
 let refreshQueued = false;
 let lastRefreshAt = 0;
 
+const STARTUP_USER_KEY = 'jiafen.startup.user.v1';
+const STARTUP_DATA_PREFIX = 'jiafen.startup.data.v1.';
+function clearStartupSnapshot() {
+  try {
+    const id = localStorage.getItem(STARTUP_USER_KEY);
+    if (id) localStorage.removeItem(STARTUP_DATA_PREFIX + id);
+    localStorage.removeItem(STARTUP_USER_KEY);
+  } catch (_) {}
+}
+function readStartupSnapshot(userId) {
+  try {
+    const id = userId == null ? localStorage.getItem(STARTUP_USER_KEY) : String(userId);
+    if (!id) return null;
+    const saved = JSON.parse(localStorage.getItem(STARTUP_DATA_PREFIX + id) || 'null');
+    if (!saved || typeof saved.at !== 'number' || String(saved.user?.id) !== id || !Array.isArray(saved.classes) ||
+        !Array.isArray(saved.history) || Date.now() - saved.at > 7 * 86400000) return null;
+    return saved;
+  } catch (_) { return null; }
+}
+function saveStartupSnapshot(user, classes, history) {
+  if (!user || user.id == null) return;
+  try {
+    // 只存展示所需的账号字段和服务器确认的数据，不保存密码或会话凭据。
+    const displayUser = { id: user.id, username: user.username, display_name: user.display_name };
+    localStorage.setItem(STARTUP_DATA_PREFIX + user.id, JSON.stringify({
+      user: displayUser, classes, history, at: Date.now(),
+    }));
+    localStorage.setItem(STARTUP_USER_KEY, String(user.id));
+  } catch (_) {}
+}
+function scheduleStartupSnapshot() {
+  // 等调用方处理完服务器响应再保存，不把未确认的乐观加分写进启动快照。
+  setTimeout(() => {
+    if (sessionVerified && dataReady && !pendingOps && !pendingDeltas.size) {
+      saveStartupSnapshot(state.user, state.classes, state.history);
+    }
+  }, 0);
+}
+function renderDashboard() {
+  renderSidebar();
+  renderMobileClassSelect();
+  renderBoard();
+  renderLeaderboard();
+  renderHistory();
+  renderProjector();
+}
+function showStartupSnapshot(saved) {
+  state.user = saved.user;
+  state.classes = saved.classes;
+  state.history = saved.history;
+  state.currentClassId = loadSel();
+  showApp();
+  renderAccount();
+  renderDashboard();
+  renderSyncStatus();
+}
+
 // 还没得到服务端确认的加减分：gid -> 净增量。
 // 后台对账（refresh）拉到的数据如果比这次点击旧，就把这个增量补回去，
 // 否则表现就是「刚点的分被刷回去了，像没生效」。
@@ -725,11 +806,15 @@ async function refresh() {
   if (refreshing) { refreshQueued = true; return; }
   if (state.dragActive) { state.pendingRefresh = true; return; }
   refreshing = true;
+  const requestedUser = state.user;
   try {
     const [classes, history] = await Promise.all([
       api('/api/classes'),
       api('/api/history'),
     ]);
+    // 退出或切换账号后，不能把旧请求的结果画到新账号的界面。
+    if (!sessionVerified || !state.user || state.user.id !== requestedUser?.id) return;
+    saveStartupSnapshot(state.user, classes, history);
     state.classes = classes;
     state.history = history;
     if (pendingDeltas.size) {
@@ -739,12 +824,9 @@ async function refresh() {
       }));
     }
     lastRefreshAt = Date.now();
-    renderSidebar();
-    renderMobileClassSelect();
-    renderBoard();
-    renderLeaderboard();
-    renderHistory();
-    renderProjector();
+    dataReady = true;
+    renderDashboard();
+    renderSyncStatus();
     // 名单不进分数刷新链路：只有名单本身变了才重画，且拖拽中绝不重建 DOM
     if (state.rosterOpen && !state.dragActive && rosterSig(getCurrentClass()) !== state.rosterSig) renderRoster();
   } catch (e) { /* 忽略瞬时错误 */ } finally {
@@ -1095,7 +1177,7 @@ let pendingOps = 0;
 
 function renderSyncStatus() {
   let cls = 'synced', text = '已同步', title = '实时同步已连接';
-  if (!sseConnected) { cls = 'offline'; text = '未连接'; title = '实时同步连接中断，正在重连…'; }
+  if (!sseConnected || !sessionVerified || !dataReady) { cls = 'offline'; text = '未同步'; title = '正在后台连接并核对数据，当前显示的内容可能尚未更新'; }
   else if (pendingOps > 0) { cls = 'syncing'; text = '同步中…'; title = '正在保存到服务器'; }
   document.querySelectorAll('.sync-status').forEach(el => {
     el.className = 'sync-status ' + cls;
@@ -1140,6 +1222,7 @@ function openSSE() {
     sseConnected = true;
     renderSyncStatus();
     handleRemoteUpdate(data);
+    scheduleStartupSnapshot();
     // 先处理当前事件（包括播报），再从服务器核对最终分数与历史。
     if (needsReconcile) refresh();
   });
@@ -1157,7 +1240,7 @@ function startSseWatchdog() {
   if (sseWatchdog) return;
   lastSseAt = Date.now();
   sseWatchdog = setInterval(() => {
-    if (document.hidden) return;
+    if (document.hidden || !state.authed) return;
     // 服务端每 15 秒发一次 ping；超过 45 秒无任何消息视为连接卡死，重连并对账
     if (Date.now() - lastSseAt > 45000) {
       try { if (es) es.close(); } catch (_) {}
@@ -1232,20 +1315,62 @@ function handleRemoteUpdate(data) {
   refresh();
 }
 async function bootstrap() {
+  startupCheckingEnabled = false;
+  sessionVerified = true;
+  dataReady = false;
   state.authed = true;
+  try {
+    if (localStorage.getItem(STARTUP_USER_KEY) !== String(state.user?.id)) {
+      localStorage.removeItem(STARTUP_USER_KEY);
+    }
+  } catch (_) {}
+  const saved = readStartupSnapshot(state.user?.id);
+  state.classes = saved?.classes || [];
+  state.history = saved?.history || [];
   showApp();
   renderAccount();
   state.currentClassId = loadSel();
-  await refresh();
+  renderDashboard();
+  renderSyncStatus();
   openSSE();
   startSseWatchdog();
+  void refresh();
 }
-async function init() {
+let checkingSession = false;
+async function verifyStartupSession() {
+  if (!startupCheckingEnabled || checkingSession || sessionVerified || document.hidden) return;
+  checkingSession = true;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
   try {
-    const m = await fetch('/api/me').then(r => r.json());
+    const response = await fetch('/api/me', { cache: 'no-store', signal: controller.signal });
+    if (!startupCheckingEnabled || sessionVerified) return;
+    if (response.status === 401) { showLogin(); return; }
+    if (!response.ok) throw new Error('登录检查暂未完成');
+    const m = await response.json();
+    if (!startupCheckingEnabled || sessionVerified) return;
     if (m.authed) { state.user = m.user || null; await bootstrap(); }
     else showLogin();
-  } catch (e) { showLogin(); }
+  } catch (e) {
+    // 网络暂时不可用时保留已显示的界面，以「未同步」提示，稍后继续检查。
+    renderSyncStatus();
+  } finally {
+    clearTimeout(timeout);
+    checkingSession = false;
+  }
+}
+async function init() {
+  const saved = readStartupSnapshot();
+  if (saved) showStartupSnapshot(saved);
+  else { showApp(); renderSyncStatus(); }
+  void verifyStartupSession();
+  setInterval(() => {
+    if (document.hidden || navigator.onLine === false) return;
+    if (sessionVerified && !dataReady && !refreshing) void refresh();
+    else void verifyStartupSession();
+  }, 5000);
+  window.addEventListener('online', verifyStartupSession);
+  document.addEventListener('visibilitychange', verifyStartupSession);
 }
 
 // ---------------- 投屏 ----------------

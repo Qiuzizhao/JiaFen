@@ -17,6 +17,7 @@ function desktop() {
     Date, Set,
     EventSource: class { addEventListener(name, fn) { listeners[name] = fn; } close() {} },
     renderSyncStatus() {},
+    scheduleStartupSnapshot() {},
     refresh() { calls.push(['refresh']); },
     refreshRewards() {},
     setGroupScore(id, score) { calls.push(['score', id, score]); },
