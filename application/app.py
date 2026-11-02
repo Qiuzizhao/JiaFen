@@ -188,6 +188,45 @@ def init_archive_history(conn):
                      "FROM groups g JOIN classes c ON c.id=g.class_id WHERE c.owner_id=?", (at, owner[0]))
 
 
+def beijing_now():
+    return datetime.now(timezone(timedelta(hours=8)))
+
+
+def init_monthly_scores(conn):
+    """Preserve teaching entries independently of resets and editable legacy logs."""
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS monthly_score_entries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            transaction_id INTEGER NOT NULL UNIQUE,
+            owner_id INTEGER NOT NULL,
+            class_id INTEGER NOT NULL,
+            group_id INTEGER NOT NULL,
+            delta INTEGER NOT NULL,
+            occurred_at TEXT NOT NULL,
+            voided_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_monthly_owner_time
+            ON monthly_score_entries(owner_id,occurred_at,group_id);
+        CREATE INDEX IF NOT EXISTS idx_monthly_class_time
+            ON monthly_score_entries(owner_id,class_id,occurred_at);
+        CREATE TRIGGER IF NOT EXISTS monthly_transaction_insert
+        AFTER INSERT ON transactions BEGIN
+            INSERT INTO monthly_score_entries
+                (transaction_id,owner_id,class_id,group_id,delta,occurred_at)
+            SELECT NEW.id,c.owner_id,NEW.class_id,NEW.group_id,NEW.delta,NEW.created_at
+            FROM classes c WHERE c.id=NEW.class_id;
+        END;
+    """)
+    # Existing effective logs are copied without altering any original row.
+    conn.execute("""
+        INSERT OR IGNORE INTO monthly_score_entries
+            (transaction_id,owner_id,class_id,group_id,delta,occurred_at)
+        SELECT t.id,c.owner_id,t.class_id,t.group_id,t.delta,t.created_at
+        FROM transactions t JOIN classes c ON c.id=t.class_id
+    """)
+
+
+
 def init_db():
     os.makedirs(DB_DIR, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
@@ -349,6 +388,7 @@ def init_db():
     for row in missing_progress:
         record_reward_milestones(conn, row[0])
     init_archive_history(conn)
+    init_monthly_scores(conn)
     conn.commit()
     conn.close()
 
@@ -1128,8 +1168,8 @@ def add_score():
         return jsonify({"error": "小组不存在"}), 404
     db = get_db()
     db.execute(
-        "INSERT INTO transactions(group_id, class_id, delta, reason) VALUES(?,?,?,?)",
-        (gid, owned["id"], delta, reason),
+        "INSERT INTO transactions(group_id, class_id, delta, reason, created_at) VALUES(?,?,?,?,?)",
+        (gid, owned["id"], delta, reason, beijing_now().strftime("%Y-%m-%d %H:%M:%S")),
     )
     db.execute("UPDATE groups SET score = score + ? WHERE id=?", (delta, gid))
     record_reward_milestones(db, gid)
@@ -1169,11 +1209,12 @@ def add_class_score(cid):
     if not groups:
         return jsonify({"error": "该班级还没有小组"}), 404
     batch_id = uuid.uuid4().hex
+    occurred_at = beijing_now().strftime("%Y-%m-%d %H:%M:%S")
     for gr in groups:
         db.execute(
-            "INSERT INTO transactions(group_id, class_id, delta, reason, batch_id) "
-            "VALUES(?,?,?,?,?)",
-            (gr["id"], cid, delta, reason, batch_id),
+            "INSERT INTO transactions(group_id, class_id, delta, reason, batch_id, created_at) "
+            "VALUES(?,?,?,?,?,?)",
+            (gr["id"], cid, delta, reason, batch_id, occurred_at),
         )
     db.execute("UPDATE groups SET score = score + ? WHERE class_id=?", (delta, cid))
     for gr in groups:
@@ -1211,6 +1252,7 @@ def undo():
     client = (data.get("client") or "")[:32]
     db = get_db()
     u = current_user()
+    db.execute("BEGIN IMMEDIATE")
     # 只撤销自己名下的最后一次操作，别去动别人的分
     t = db.execute(
         "SELECT id, group_id, delta, batch_id FROM transactions "
@@ -1227,6 +1269,10 @@ def undo():
         ).fetchall()
         for r in rows:
             db.execute("UPDATE groups SET score = score - ? WHERE id=?", (r["delta"], r["group_id"]))
+        db.executemany(
+            "UPDATE monthly_score_entries SET voided_at=? WHERE transaction_id=? AND owner_id=?",
+            [(beijing_now().strftime("%Y-%m-%d %H:%M:%S"), r["id"], u["id"]) for r in rows],
+        )
         db.execute("DELETE FROM transactions WHERE batch_id=?", (t["batch_id"],))
         db.commit()
         scores = _group_scores(db, [r["group_id"] for r in rows])
@@ -1243,6 +1289,10 @@ def undo():
             }
         )
     db.execute("UPDATE groups SET score = score - ? WHERE id=?", (t["delta"], t["group_id"]))
+    db.execute(
+        "UPDATE monthly_score_entries SET voided_at=? WHERE transaction_id=? AND owner_id=?",
+        (beijing_now().strftime("%Y-%m-%d %H:%M:%S"), t["id"], u["id"]),
+    )
     db.execute("DELETE FROM transactions WHERE id=?", (t["id"],))
     db.commit()
     scores = _group_scores(db, [t["group_id"]])
@@ -1413,6 +1463,34 @@ def toggle_reward_opportunity(oid):
     db.commit()
     broadcast({"kind": "rewards", "client": (data.get("client") or "")[:32]})
     return jsonify({"ok": True, "completed": bool(completed)})
+
+
+@app.route("/api/statistics/monthly")
+@login_required
+def monthly_statistics():
+    current_month = beijing_now().strftime("%Y-%m")
+    month = request.args.get("month", current_month)
+    if not re.fullmatch(r"[0-9]{4}-(0[1-9]|1[0-2])", month):
+        return jsonify({"error": "月份格式应为 YYYY-MM"}), 400
+    year, number = map(int, month.split("-"))
+    if not 1900 <= year <= 9998:
+        return jsonify({"error": "月份超出范围"}), 400
+    start = month + "-01 00:00:00"
+    end = f"{year + (number == 12):04d}-{number % 12 + 1:02d}-01 00:00:00"
+    db = get_db()
+    uid = current_user()["id"]
+    rows = db.execute(
+        "SELECT g.id AS group_id,g.class_id,COALESCE(m.score,0) AS score "
+        "FROM groups g JOIN classes c ON c.id=g.class_id "
+        "LEFT JOIN (SELECT group_id,SUM(delta) AS score FROM monthly_score_entries "
+        "WHERE owner_id=? AND occurred_at>=? AND occurred_at<? AND voided_at IS NULL "
+        "GROUP BY group_id) m ON m.group_id=g.id WHERE c.owner_id=? "
+        "ORDER BY g.class_id,g.sort_order,g.id",
+        (uid, start, end, uid),
+    ).fetchall()
+    return jsonify({"month": month, "current_month": current_month,
+                    "timezone": "Asia/Shanghai", "scores": [dict(row) for row in rows]})
+
 
 
 @app.route("/api/history")

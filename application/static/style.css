@@ -1039,3 +1039,9 @@ html { -webkit-text-size-adjust: 100%; }
   .reward-card.has-class .reward-card-names h3 { gap: 6px; font-size: 14px; }
   .reward-card-tokens { gap: 6px; }
 }
+
+/* Ranking periods share the existing ranking presentation. */
+.lb-period-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.lb-period-controls input { min-width: 0; flex: 1; width: 150px; padding: 8px; font-size: 13px; }
+.lb-period-label { margin-bottom: 10px; color: var(--muted); font-size: 12px; }
+.lb-score small { margin-left: 3px; color: var(--muted); font-size: 11px; font-weight: 400; }

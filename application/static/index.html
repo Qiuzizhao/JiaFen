@@ -14,7 +14,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png?v=20260915">
   <link rel="icon" href="/favicon.ico?v=20260915" sizes="any">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=20260915">
-  <link rel="stylesheet" href="/style.css?v=20261016c">
+  <link rel="stylesheet" href="/style.css?v=20261102a">
 </head>
 <body>
 
@@ -128,6 +128,14 @@
               <button id="lb-classes-btn">班级</button>
             </div>
           </div>
+          <div class="lb-period-controls">
+            <div class="lb-toggle" aria-label="排行榜时间">
+              <button id="lb-current-btn" class="on" type="button">当月</button>
+              <button id="lb-history-btn" type="button">历史</button>
+            </div>
+            <input id="lb-month" type="month" aria-label="选择排行榜月份" min="1900-01" max="9998-12">
+          </div>
+          <div id="lb-period-label" class="lb-period-label" aria-live="polite"></div>
           <div id="leaderboard" class="leaderboard"></div>
         </div>
         <div class="panel">
@@ -350,7 +358,7 @@
     <div id="projector-board" class="projector-board"></div>
   </div>
 
-  <script src="/app.js?v=20261016c"></script>
+  <script src="/app.js?v=20261102a"></script>
   <script src="/archives.js?v=20261010d"></script>
 </body>
 </html>

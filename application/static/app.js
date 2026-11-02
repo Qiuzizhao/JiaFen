@@ -21,6 +21,8 @@ const state = {
   dragActive: false,
   pendingRefresh: false,
   leaderboardMode: 'class',
+  leaderboardPeriod: 'current',
+  leaderboardMonth: '',
   rewardOpen: false,
   rewardData: null,
   rewardMode: 'class',
@@ -431,7 +433,10 @@ async function api(path, opts = {}) {
   } finally {
     if (timeout !== null) clearTimeout(timeout);
     if (mutating) { pendingOps--; renderSyncStatus(); }
-    if (mutating && succeeded) scheduleStartupSnapshot();
+    if (mutating && succeeded) {
+      scheduleStartupSnapshot();
+      scheduleMonthlyLeaderboardRefresh();
+    }
   }
 }
 
@@ -626,13 +631,71 @@ function renderBoard() {
   board.innerHTML = cls.groups.map(g => groupCard(g, ranks)).join('');
 }
 
+// Monthly totals always come from the server; cumulative card scores remain unchanged.
+let monthlyLeaderboard = null;
+let monthlyRequest = 0;
+let monthlyRefreshTimer = null;
+function beijingMonth() {
+  const parts = new Intl.DateTimeFormat('en', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit' }).formatToParts(new Date());
+  return parts.find(p => p.type === 'year').value + '-' + parts.find(p => p.type === 'month').value;
+}
+function selectedLeaderboardMonth() {
+  return state.leaderboardPeriod === 'month' ? state.leaderboardMonth : beijingMonth();
+}
+function scheduleMonthlyLeaderboardRefresh() {
+  if (!sessionVerified || !state.authed) return;
+  // Invalidate an in-flight result immediately when newer scoring activity arrives.
+  monthlyRequest++;
+  clearTimeout(monthlyRefreshTimer);
+  monthlyRefreshTimer = setTimeout(refreshMonthlyLeaderboard, 80);
+}
+async function refreshMonthlyLeaderboard() {
+  if (!sessionVerified || !state.authed || state.leaderboardPeriod === 'history') return;
+  const month = selectedLeaderboardMonth();
+  const userId = state.user?.id;
+  const version = ++monthlyRequest;
+  try {
+    const data = await api('/api/statistics/monthly?month=' + encodeURIComponent(month));
+    if (version !== monthlyRequest || state.user?.id !== userId || !sessionVerified) return;
+    monthlyLeaderboard = { ...data, userId };
+    renderLeaderboard();
+  } catch (e) {
+    if (version !== monthlyRequest) return;
+    monthlyLeaderboard = { month, userId, error: e.message };
+    renderLeaderboard();
+  }
+}
+function setLeaderboardPeriod(period) {
+  state.leaderboardPeriod = period;
+  monthlyRequest++;
+  renderLeaderboard();
+  scheduleMonthlyLeaderboardRefresh();
+}
+function monthlyScore(group) {
+  if (state.leaderboardPeriod === 'history') return group.score;
+  return monthlyLeaderboard?.scores?.find(row => row.group_id === group.id)?.score || 0;
+}
+
 function renderLeaderboard() {
   const el = $('#leaderboard');
   const medals = ['🥇', '🥈', '🥉'];
+  const cumulative = state.leaderboardPeriod === 'history';
+  const month = selectedLeaderboardMonth();
+  $('#lb-current-btn').classList.toggle('on', state.leaderboardPeriod === 'current');
+  $('#lb-current-btn').setAttribute('aria-pressed', String(state.leaderboardPeriod === 'current'));
+  $('#lb-history-btn').setAttribute('aria-pressed', String(cumulative));
+  $('#lb-history-btn').classList.toggle('on', cumulative);
+  $('#lb-month').hidden = cumulative;
+  $('#lb-month').value = month;
+  $('#lb-period-label').textContent = cumulative ? '累计积分' : `${month.slice(0, 4)}年${Number(month.slice(5))}月积分`;
+  if (!cumulative && (!sessionVerified || monthlyLeaderboard?.month !== month || monthlyLeaderboard?.userId !== state.user?.id || monthlyLeaderboard.error)) {
+    el.innerHTML = '<div class="empty">' + esc(monthlyLeaderboard?.month === month && monthlyLeaderboard?.userId === state.user?.id && monthlyLeaderboard.error ? monthlyLeaderboard.error + '，稍后自动重试' : '正在同步月度积分…') + '</div>';
+    return;
+  }
   let items = [];
   let empty = '暂无小组';
   if (state.leaderboardMode === 'school') {
-    state.classes.forEach(c => c.groups.forEach(g => items.push({ ...g, tag: c.name + ' · ' + g.name })));
+    state.classes.forEach(c => c.groups.forEach(g => items.push({ ...g, score: monthlyScore(g), tag: c.name + ' · ' + g.name })));
   } else if (state.leaderboardMode === 'classes') {
     // 班级排行：以整个班级为单位，班级分数 = 全班所有小组积分之和
     empty = '暂无班级';
@@ -640,11 +703,11 @@ function renderLeaderboard() {
       id: 'c' + c.id,
       tag: c.name,
       color: (c.groups[0] && c.groups[0].color) || '#3b82f6',
-      score: c.groups.reduce((sum, g) => sum + g.score, 0),
+      score: c.groups.reduce((sum, g) => sum + monthlyScore(g), 0),
     }));
   } else {
     const cls = getCurrentClass();
-    if (cls) items = cls.groups.map(g => ({ ...g, tag: g.name }));
+    if (cls) items = cls.groups.map(g => ({ ...g, score: monthlyScore(g), tag: g.name }));
   }
   if (!items.length) { el.innerHTML = `<div class="empty">${empty}</div>`; return; }
   items.sort((a, b) => b.score - a.score);
@@ -653,7 +716,7 @@ function renderLeaderboard() {
       <span class="rank">${medals[i] || (i + 1)}</span>
       <span class="dot"></span>
       <span class="lb-name" title="${esc(g.tag)}">${esc(g.tag)}</span>
-      <span class="lb-score">${g.score}</span>
+      <span class="lb-score">${g.score > 0 ? '+' : ''}${g.score}<small>分</small></span>
     </div>`).join('');
 }
 
@@ -829,6 +892,7 @@ async function refresh() {
     }
     lastRefreshAt = Date.now();
     dataReady = true;
+    scheduleMonthlyLeaderboardRefresh();
     renderDashboard();
     renderSyncStatus();
     // 名单不进分数刷新链路：只有名单本身变了才重画，且拖拽中绝不重建 DOM
@@ -1269,6 +1333,7 @@ async function syncClassRoster(cid) {
 
 // 其它设备的改动：能局部更新就局部更新，只有结构性变化才整页重新拉取
 function handleRemoteUpdate(data) {
+  if (typeof scheduleMonthlyLeaderboardRefresh === 'function') scheduleMonthlyLeaderboardRefresh();
   if (state.rewardOpen && !(data.client && data.client === CLIENT_ID)) refreshRewards();
   if (data.client && data.client === CLIENT_ID) return;   // 自己的改动已本地生效
   if (data.kind === 'archives') {
@@ -2816,6 +2881,13 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#register-btn').addEventListener('click', doRegister);
   $('#reg-pw').addEventListener('keydown', e => { if (e.key === 'Enter') doRegister(); });
   $('#btn-undo').addEventListener('click', doUndo);
+  $('#lb-current-btn').addEventListener('click', () => setLeaderboardPeriod('current'));
+  $('#lb-history-btn').addEventListener('click', () => setLeaderboardPeriod('history'));
+  $('#lb-month').addEventListener('change', e => {
+    if (!e.target.value) { renderLeaderboard(); return; }
+    state.leaderboardMonth = e.target.value;
+    setLeaderboardPeriod('month');
+  });
   $('#lb-class-btn').addEventListener('click', () => setLeaderboardMode('class'));
   $('#lb-school-btn').addEventListener('click', () => setLeaderboardMode('school'));
   $('#lb-classes-btn').addEventListener('click', () => setLeaderboardMode('classes'));
@@ -2977,3 +3049,25 @@ document.addEventListener('DOMContentLoaded', () => {
   window.addEventListener('resize', sync);
   sync();
 })();
+
+// A selected historical month stays fixed; “当月” follows Beijing month boundaries.
+setInterval(() => {
+  if (!document.hidden && state.authed && sessionVerified && state.leaderboardPeriod !== 'history') {
+    renderLeaderboard();
+    scheduleMonthlyLeaderboardRefresh();
+  }
+}, 15000);
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) scheduleMonthlyLeaderboardRefresh();
+});
+// Detect the Beijing month boundary within one second, without resetting scores.
+let observedLeaderboardMonth = beijingMonth();
+setInterval(() => {
+  const month = beijingMonth();
+  if (month === observedLeaderboardMonth) return;
+  observedLeaderboardMonth = month;
+  if (state.authed && sessionVerified && state.leaderboardPeriod === 'current') {
+    renderLeaderboard();
+    scheduleMonthlyLeaderboardRefresh();
+  }
+}, 1000);
