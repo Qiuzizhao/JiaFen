@@ -18,6 +18,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 from lessons import init_lessons, assign_new_scores, touch_lesson_records, register_lesson_routes
+from averages import register_average_routes
 DB_DIR = os.path.join(BASE_DIR, "data")
 # 本地测试可以指向另一个库文件，线上不设这个变量就还是原来的位置
 DB_PATH = os.environ.get("JIAFEN_DB_PATH") or os.path.join(DB_DIR, "jiafen.db")
@@ -1766,6 +1767,7 @@ def index():
 
 
 register_lesson_routes(app, get_db, current_user, login_required, own_class, broadcast)
+register_average_routes(app, get_db, current_user, login_required, lambda: beijing_now())
 
 if __name__ == "__main__":
     init_db()
