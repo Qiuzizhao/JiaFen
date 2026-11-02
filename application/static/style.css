@@ -1041,8 +1041,11 @@ html { -webkit-text-size-adjust: 100%; }
 }
 
 /* Ranking periods share the existing ranking presentation. */
-.lb-period-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
-.lb-period-controls input { min-width: 0; flex: 1; width: 150px; padding: 8px; font-size: 13px; }
+.lb-period-controls { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: center; gap: 8px; margin: 12px 0; min-height: 42px; }
+.lb-period-controls .lb-toggle { margin-left: 0; justify-self: start; }
+.lb-period-controls .lb-toggle button { min-width: 48px; }
+.lb-period-controls .lb-month-inactive { visibility: hidden; pointer-events: none; }
+.lb-period-controls input { min-width: 0; width: 100%; padding: 8px; font-size: 13px; }
 .lb-period-label { margin-bottom: 10px; color: var(--muted); font-size: 12px; }
 .lb-score small { margin-left: 3px; color: var(--muted); font-size: 11px; font-weight: 400; }
 

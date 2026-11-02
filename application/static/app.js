@@ -687,7 +687,9 @@ function renderLeaderboard() {
   $('#lb-current-btn').setAttribute('aria-pressed', String(state.leaderboardPeriod === 'current'));
   $('#lb-history-btn').setAttribute('aria-pressed', String(cumulative));
   $('#lb-history-btn').classList.toggle('on', cumulative);
-  $('#lb-month').hidden = cumulative;
+  $('#lb-month').classList.toggle('lb-month-inactive', cumulative);
+  $('#lb-month').disabled = cumulative;
+  $('#lb-month').setAttribute('aria-hidden', String(cumulative));
   $('#lb-month').value = month;
   $('#lb-period-label').textContent = cumulative ? '累计积分' : `${month.slice(0, 4)}年${Number(month.slice(5))}月积分`;
   if (!cumulative && (!sessionVerified || monthlyLeaderboard?.month !== month || monthlyLeaderboard?.userId !== state.user?.id || monthlyLeaderboard.error)) {
