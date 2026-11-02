@@ -14,7 +14,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png?v=20260915">
   <link rel="icon" href="/favicon.ico?v=20260915" sizes="any">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=20260915">
-  <link rel="stylesheet" href="/style.css?v=20261102h">
+  <link rel="stylesheet" href="/style.css?v=20261102i">
 </head>
 <body>
 
@@ -134,9 +134,9 @@
               <button id="lb-current-btn" class="on" type="button">当月</button>
               <button id="lb-history-btn" type="button">历史</button>
             </div>
-            <input id="lb-month" type="month" aria-label="选择排行榜月份" min="1900-01" max="9998-12">
+            <div class="lb-month-control"><input id="lb-month" type="month" aria-label="选择排行榜月份" min="1900-01" max="9998-12"><span id="lb-history-range" class="hidden">全部时间</span></div>
           </div>
-          <div id="lb-period-label" class="lb-period-label" aria-live="polite"></div>
+          <div class="lb-period-caption"><div id="lb-period-label" class="lb-period-label" aria-live="polite"></div><small id="lb-basis-hint"></small></div>
           <div id="leaderboard" class="leaderboard"></div>
         </div>
         <div class="panel">
@@ -165,17 +165,27 @@
   </div>
   <div id="lessons-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="lessons-title">
     <div class="modal-box lessons-box">
-      <div class="modal-head"><h3 id="lessons-title">课堂记录</h3><button id="lessons-close" class="icon-btn" type="button" aria-label="关闭">✕</button></div>
-      <div class="lessons-toolbar">
-        <select id="lessons-class" aria-label="选择班级"></select>
-        <input id="lessons-month" type="month" aria-label="选择月份">
-        <button id="lesson-edit" class="ghost" type="button">编辑时间轴</button>
-        <button id="lessons-settings" class="ghost" type="button">设置</button>
-        <button id="lessons-new" class="primary" type="button">补建课堂</button>
+      <div class="lessons-header">
+        <div class="modal-head"><h3 id="lessons-title">课堂记录</h3><button id="lessons-close" class="icon-btn" type="button" aria-label="关闭">✕</button></div>
+        <div class="lessons-toolbar">
+          <label class="lesson-class-picker"><span>班级</span><select id="lessons-class" aria-label="选择班级"></select></label>
+          <div class="lesson-month-picker"><button id="lessons-prev-month" type="button" aria-label="上一个月">‹</button><input id="lessons-month" type="month" aria-label="选择月份"><button id="lessons-next-month" type="button" aria-label="下一个月">›</button></div>
+          <button id="lessons-current-month" class="ghost" type="button">本月</button>
+          <div class="lessons-toolbar-actions"><button id="lesson-edit" class="ghost lesson-mode-button" type="button">编辑时间轴</button><button id="lessons-new" class="ghost" type="button">补建课堂</button><button id="lessons-settings" class="ghost" type="button" aria-label="课堂识别设置">⚙ 设置</button></div>
+        </div>
+        <div id="lessons-overview" class="lessons-overview" aria-live="polite"></div>
       </div>
-      <p id="lessons-error" class="err" role="alert"></p>
-      <div id="lessons-circles"></div>
-      <div id="lesson-detail"></div>
+      <div class="lessons-body">
+        <p id="lessons-error" class="err" role="alert"></p>
+        <div id="lessons-circles"></div>
+        <div id="lesson-detail"></div>
+      </div>
+      <div id="lesson-workflow-bar" class="lesson-workflow-bar" hidden>
+        <div id="lesson-workflow-state" class="lesson-workflow-state" aria-live="polite">已保存</div>
+        <details class="lesson-more-actions"><summary>更多操作</summary><div><button id="lesson-split" class="ghost" type="button">拆分课堂</button><button id="lesson-merge" class="ghost" type="button">合并下一节</button></div></details>
+        <button id="lesson-revert" class="ghost" type="button">取消修改</button>
+        <button id="lesson-save" class="primary" type="button" disabled>保存调整</button>
+      </div>
     </div>
   </div>
   <div id="lesson-form-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="lesson-form-title">
@@ -410,8 +420,8 @@
     <div id="projector-board" class="projector-board"></div>
   </div>
 
-  <script src="/app.js?v=20261102h"></script>
-  <script src="/lessons.js?v=20261102h"></script>
+  <script src="/app.js?v=20261102i"></script>
+  <script src="/lessons.js?v=20261102i"></script>
   <script src="/archives.js?v=20261010d"></script>
 </body>
 </html>

@@ -692,7 +692,9 @@ function renderLeaderboard() {
   $('#lb-month').disabled = cumulative;
   $('#lb-month').setAttribute('aria-hidden', String(cumulative));
   $('#lb-month').value = month;
-  $('#lb-period-label').textContent = cumulative ? '累计积分' : `${month.slice(0, 4)}年${Number(month.slice(5))}月积分`;
+  $('#lb-history-range').classList.toggle('hidden', !cumulative);
+  $('#lb-basis-hint').textContent = cumulative ? '' : '小组卡片显示累计分';
+  $('#lb-period-label').textContent = cumulative ? '累计积分' : `${month.slice(0, 4)}年${Number(month.slice(5))}月 · 净积分`;
   if (!cumulative && (!sessionVerified || monthlyLeaderboard?.month !== month || monthlyLeaderboard?.userId !== state.user?.id || monthlyLeaderboard.error)) {
     el.innerHTML = '<div class="empty">' + esc(monthlyLeaderboard?.month === month && monthlyLeaderboard?.userId === state.user?.id && monthlyLeaderboard.error ? monthlyLeaderboard.error + '，稍后自动重试' : '正在同步月度积分…') + '</div>';
     return;
