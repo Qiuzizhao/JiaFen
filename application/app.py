@@ -1185,6 +1185,7 @@ def add_score():
     broadcast(
         {
             "kind": "score",
+            "transaction_id": score_cursor.lastrowid,
             "client": (data.get("client") or "")[:32],
             "group_id": gid,
             "class_id": owned["id"],
@@ -1194,7 +1195,7 @@ def add_score():
             "at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }
     )
-    return jsonify({"ok": True, "score": new_score})
+    return jsonify({"ok": True, "score": new_score, "transaction_id": score_cursor.lastrowid})
 
 
 @app.route("/api/classes/<int:cid>/score", methods=["POST"])
@@ -1230,9 +1231,12 @@ def add_class_score(cid):
     db.commit()
     rows = db.execute("SELECT id, score FROM groups WHERE class_id=?", (cid,)).fetchall()
     scores = [{"id": r["id"], "score": r["score"]} for r in rows]
+    transaction_ids = {r["group_id"]: r["id"] for r in db.execute(
+        "SELECT id,group_id FROM transactions WHERE batch_id=? AND class_id=?", (batch_id,cid))}
     broadcast(
         {
             "kind": "class_score",
+            "transaction_ids": transaction_ids,
             "client": (data.get("client") or "")[:32],
             "class_id": cid,
             "delta": delta,
@@ -1246,6 +1250,7 @@ def add_class_score(cid):
         {
             "ok": True,
             "count": len(scores),
+            "transaction_ids": transaction_ids,
             "delta": delta,
             "batch_id": batch_id,
             "scores": scores,
@@ -1254,26 +1259,31 @@ def add_class_score(cid):
 
 
 @app.route("/api/undo", methods=["POST"])
+@app.route("/api/transactions/<int:transaction_id>/undo", methods=["POST"])
 @login_required
-def undo():
+def undo(transaction_id=None):
     data = request.get_json(silent=True) or {}
     client = (data.get("client") or "")[:32]
     db = get_db()
     u = current_user()
     db.execute("BEGIN IMMEDIATE")
-    # 只撤销自己名下的最后一次操作，别去动别人的分
-    t = db.execute(
-        "SELECT id, group_id, delta, batch_id FROM transactions "
-        "WHERE class_id IN (SELECT id FROM classes WHERE owner_id=?) "
-        "ORDER BY id DESC LIMIT 1",
-        (u["id"],),
-    ).fetchone()
+    # Explicit IDs target exactly the visible record; old clients retain latest-operation undo.
+    query = ("SELECT id,group_id,class_id,delta,batch_id FROM transactions "
+             "WHERE class_id IN (SELECT id FROM classes WHERE owner_id=?)")
+    params = [u["id"]]
+    if transaction_id is not None:
+        query += " AND id=?"
+        params.append(transaction_id)
+    t = db.execute(query + " ORDER BY id DESC LIMIT 1", params).fetchone()
     if not t:
+        db.rollback()
+        if transaction_id is not None:
+            return jsonify({"error": "该记录已撤销或不存在，请刷新后查看"}), 404
         return jsonify({"ok": True, "undone": False})
     if t["batch_id"]:
         # 全班加减分：同一批次的记录一起撤销
         rows = db.execute(
-            "SELECT id, group_id, delta FROM transactions WHERE batch_id=?", (t["batch_id"],)
+            "SELECT id, group_id, delta FROM transactions WHERE batch_id=? AND class_id=?", (t["batch_id"], t["class_id"]),
         ).fetchall()
         for r in rows:
             db.execute("UPDATE groups SET score = score - ? WHERE id=?", (r["delta"], r["group_id"]))
@@ -1282,7 +1292,7 @@ def undo():
             [(beijing_now().strftime("%Y-%m-%d %H:%M:%S"), r["id"], u["id"]) for r in rows],
         )
         touch_lesson_records(db, [r["id"] for r in rows])
-        db.execute("DELETE FROM transactions WHERE batch_id=?", (t["batch_id"],))
+        db.execute("DELETE FROM transactions WHERE batch_id=? AND class_id=?", (t["batch_id"], t["class_id"]))
         db.commit()
         scores = _group_scores(db, [r["group_id"] for r in rows])
         broadcast({"kind": "undo", "client": client, "scores": scores})

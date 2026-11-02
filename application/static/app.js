@@ -749,6 +749,7 @@ function renderHistory() {
       <span class="hist-group${h.batch_id ? ' batch' : ''}" title="${esc(label)}">${esc(label)}</span>
       ${h.reason ? `<span class="hist-reason" title="${esc(h.reason)}">${esc(h.reason)}</span>` : ''}
       <span class="hist-time">${esc(h.created_at.slice(5, 16))}</span>
+      <button type="button" class="history-undo" data-undo-id="${Number.isInteger(h.id) ? h.id : ''}" ${!Number.isInteger(h.id) || recordUndoBusy ? 'disabled' : ''} aria-label="撤销这条积分记录" title="${h.batch_id ? '撤销本次全班记分' : '撤销这条记分'}">撤销</button>
     </div>`;
   }).join('');
 }
@@ -791,6 +792,7 @@ function setGroupScores(list) {
   refreshScoreViews();
 }
 function prependHistoryLocal(entry) {
+  if (Number.isInteger(entry.id)) state.history = state.history.filter(h => h.id !== entry.id);
   state.history.unshift(entry);
   if (state.history.length > 100) state.history.length = 100;
   renderHistory();
@@ -932,7 +934,7 @@ async function addScore(gid, delta, reason = '') {
     if (typeof res.score === 'number') setGroupScore(gid, res.score + stillPending);
     const cls = state.classes.find(c => c.groups.includes(g));
     prependHistoryLocal({
-      id: 'local-' + Date.now(), delta, reason, created_at: localStamp(),
+      id: res.transaction_id || ('local-' + Date.now()), delta, reason, created_at: localStamp(),
       group_id: gid, batch_id: null, group_name: g.name,
       class_name: cls ? cls.name : '',
     });
@@ -972,7 +974,7 @@ async function addClassScore(delta, reason = '') {
     const batchId = res.batch_id || ('local-' + Date.now());
     const stamp = localStamp();
     const entries = cls.groups.map(g => ({
-      id: 'local-' + g.id + '-' + stamp, delta, reason, created_at: stamp,
+      id: res.transaction_ids?.[g.id] || ('local-' + g.id + '-' + stamp), delta, reason, created_at: stamp,
       group_id: g.id, batch_id: batchId, group_name: g.name, class_name: cls.name,
     }));
     entries.reverse().forEach(prependHistoryLocal);
@@ -992,40 +994,31 @@ function applyClassCustom() {
   addClassScore(v);
   input.value = '';
 }
+let recordUndoBusy = false;
+function historyUndoDescription(h) {
+  return `${h.class_name || ''} ${h.batch_id ? '全班' : (h.group_name || '小组')} · ${h.created_at} · ${h.delta > 0 ? '+' : ''}${h.delta}分`;
+}
+async function undoHistoryRecord(id, description, batch = false) {
+  if (recordUndoBusy || !Number.isInteger(id) || id <= 0) return false;
+  const detail = batch ? '\n这条属于全班记分，将撤销本次整批操作。' : '';
+  if (!confirm('确认撤销这条积分记录？\n' + description + detail)) return false;
+  recordUndoBusy = true; renderHistory();
+  try {
+    const res = await api('/api/transactions/' + id + '/undo', { method: 'POST', body: { client: CLIENT_ID } });
+    if (Array.isArray(res.scores)) setGroupScores(res.scores);
+    await refresh();
+    return true;
+  } catch (e) {
+    alert(e.message); await refresh(); return false;
+  } finally { recordUndoBusy = false; renderHistory(); }
+}
 async function doUndo() {
   const last = state.history[0];
   if (!last) { alert('没有可撤销的记录'); return; }
-  // 本地先按最后一条记录回退，立即反馈
-  const targets = last.batch_id ? state.history.filter(h => h.batch_id === last.batch_id) : [last];
-  const snapshot = targets.map(h => {
-    const g = findGroup(h.group_id);
-    return { id: h.group_id, score: g ? g.score : 0 };
-  });
-  targets.forEach(h => {
-    const g = findGroup(h.group_id);
-    if (g) setGroupScore(g.id, g.score - h.delta, false);
-  });
-  refreshScoreViews();
-  try {
-    const res = await api('/api/undo', { method: 'POST', body: { client: CLIENT_ID } });
-    if (!res.undone) {
-      snapshot.forEach(s => setGroupScore(s.id, s.score, false));
-      refreshScoreViews();
-      alert('没有可撤销的记录');
-      return;
-    }
-    if (Array.isArray(res.scores)) setGroupScores(res.scores);
-    state.history = last.batch_id
-      ? state.history.filter(h => h.batch_id !== last.batch_id)
-      : state.history.slice(1);
-    renderHistory();
-    refresh();   // 后台对账，不阻塞界面
-  } catch (e) {
-    snapshot.forEach(s => setGroupScore(s.id, s.score, false));
-    refreshScoreViews();
-    alert(e.message);
-  }
+  if (!Number.isInteger(last.id)) { await refresh(); alert('正在核对记分记录，请稍后重试'); return; }
+  return undoHistoryRecord(last.id, historyUndoDescription(last), !!last.batch_id);
 }
+
 function openReset() {
   const cls = getCurrentClass();
   if (!cls) return;
@@ -1351,7 +1344,7 @@ function handleRemoteUpdate(data) {
     const cls = findClassOfGroup(data.group_id);
     announceScore(g ? g.name : '小组', data.delta);
     prependHistoryLocal({
-      id: 'remote-' + Date.now() + '-' + data.group_id, delta: data.delta,
+      id: data.transaction_id || ('remote-' + Date.now() + '-' + data.group_id), delta: data.delta,
       reason: data.reason || '', created_at: data.at || localStamp(),
       group_id: data.group_id, batch_id: null,
       group_name: g ? g.name : '', class_name: cls ? cls.name : '',
@@ -1366,7 +1359,7 @@ function handleRemoteUpdate(data) {
     const entries = data.scores.map(s => {
       const g = findGroup(s.id);
       return {
-        id: 'remote-' + s.id + '-' + stamp, delta: data.delta,
+        id: data.transaction_ids?.[s.id] || ('remote-' + s.id + '-' + stamp), delta: data.delta,
         reason: data.reason || '', created_at: stamp,
         group_id: s.id, batch_id: data.batch_id || ('remote-' + stamp),
         group_name: g ? g.name : '', class_name: cls ? cls.name : '',
@@ -2886,6 +2879,12 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#register-btn').addEventListener('click', doRegister);
   $('#reg-pw').addEventListener('keydown', e => { if (e.key === 'Enter') doRegister(); });
   $('#btn-undo').addEventListener('click', doUndo);
+  $('#history').addEventListener('click', e => {
+    const button = e.target.closest('[data-undo-id]');
+    if (!button || button.disabled) return;
+    const row = state.history.find(h => h.id === Number(button.dataset.undoId));
+    if (row) void undoHistoryRecord(row.id, historyUndoDescription(row), !!row.batch_id);
+  });
   $('#lb-current-btn').addEventListener('click', () => setLeaderboardPeriod('current'));
   $('#lb-history-btn').addEventListener('click', () => setLeaderboardPeriod('history'));
   $('#lb-month').addEventListener('change', e => {

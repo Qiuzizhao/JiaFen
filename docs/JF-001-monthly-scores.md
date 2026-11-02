@@ -50,3 +50,11 @@ GET /api/statistics/monthly?month=YYYY-MM
 monthly_server.py 是隔离测试夹具，含自动登录和时钟控制，不能部署为生产入口。
 
 上线前另在生产数据的内存副本演练新增表与幂等回填，并逐表指纹核对原始表不变。
+
+## 指定记录撤销
+
+`POST /api/transactions/<transaction_id>/undo` 精确撤销所选记录，兼容保留旧 `POST /api/undo`。
+主界面历史行和课堂编辑明细均可操作，先二次确认；全班批次整批撤销。
+新记分响应及SSE事件携带真实transaction_id（全班为group_id→transaction_id），避免用临时前端ID定位。
+同一事务内回退累计分、标记原月份明细失效、更新课堂版本；已撤销/不存在/非本账号记录拒绝操作，不会转而撤销最新记录。
+奖励机会沿用原撤销策略，不回收；月度账本保留原始明细与撤销时间。撤销不修改已保存的积分归档。

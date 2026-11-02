@@ -139,7 +139,7 @@
         stats(data.summary) + groupTable(data.summary);
       $('#lesson-save').disabled = !data.can_save || s.busy;
       const included = new Set(data.entries.map(e => e.id));
-      $('#lesson-records').innerHTML = `<h4>全部记分记录</h4><div class="lesson-table-wrap"><table class="lesson-table"><thead><tr><th>发生时间</th><th>小组</th><th>分值</th><th>归属预览</th></tr></thead><tbody>${s.records.map(e => `<tr class="${e.observed_only ? 'observed' : e.voided_at ? 'voided' : ''}"><td>${esc(e.occurred_at)}</td><td>${esc(e.group_name || '小组#'+e.group_id)}</td><td>${sign(e.delta)}</td><td>${e.observed_only ? '历史状态痕迹，不计分' : e.voided_at ? '已撤销，不计分' : included.has(e.id) ? '本节课堂' : e.lesson_id ? '其他课堂' : '未归属'}</td></tr>`).join('') || '<tr><td colspan="4">当日无积分记录，可保留手动补建课堂。</td></tr>'}</tbody></table></div>`;
+      $('#lesson-records').innerHTML = `<h4>全部记分记录</h4><div class="lesson-table-wrap"><table class="lesson-table"><thead><tr><th>发生时间</th><th>小组</th><th>分值</th><th>归属预览</th><th></th></tr></thead><tbody>${s.records.map(e => `<tr class="${e.observed_only ? 'observed' : e.voided_at ? 'voided' : ''}"><td>${esc(e.occurred_at)}</td><td>${esc(e.group_name || '小组#'+e.group_id)}</td><td>${sign(e.delta)}</td><td>${e.observed_only ? '历史状态痕迹，不计分' : e.voided_at ? '已撤销，不计分' : included.has(e.id) ? '本节课堂' : e.lesson_id ? '其他课堂' : '未归属'}</td><td>${!e.voided_at && !e.observed_only ? `<button type="button" class="history-undo" data-undo-entry="${e.id}">撤销</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="5">当日无积分记录，可保留手动补建课堂。</td></tr>'}</tbody></table></div>`;
     } catch (e) { if (version === previewVersion && s.editing) $('#lesson-preview').textContent = e.message; }
   }
   async function mutate(path, body, method = 'POST') {
@@ -187,6 +187,24 @@
     renderDetail();
   });
   $('#lesson-detail').addEventListener('click', async e => {
+    const undoButton = e.target.closest('[data-undo-entry]');
+    if (undoButton) {
+      if (s.busy) return;
+      const entry = s.records.find(r => r.id === Number(undoButton.dataset.undoEntry));
+      if (!entry || entry.voided_at || entry.observed_only) return;
+      if (s.dirty && !confirm('撤销记分会放弃尚未保存的边界调整，是否继续？')) return;
+      const selectedId = s.selected.id;
+      s.busy = true;
+      try {
+        const ok = await undoHistoryRecord(entry.transaction_id, `${entry.occurred_at} · ${entry.group_name || '小组'} · ${sign(entry.delta)}分`, !!entry.batch_id);
+        if (ok) {
+          s.editing = false; s.dirty = false;
+          await load(selectedId);
+          if (s.selected?.id === selectedId) { s.busy = false; await edit(); }
+        }
+      } finally { s.busy = false; }
+      return;
+    }
     if (e.target.closest('#lesson-edit')) return edit();
     if (e.target.closest('#lesson-save')) {
       if (!s.preview?.can_save || !confirm('确认保存课堂边界和记录归属？原始积分保持不变。')) return;
