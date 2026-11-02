@@ -1117,3 +1117,23 @@ html { -webkit-text-size-adjust: 100%; }
 .group-create-box input { width: 100%; min-width: 0; }
 .group-create-box .err:empty { display: none; }
 .group-create-box .modal-actions { margin-top: 18px; }
+
+@media (hover: hover) and (pointer: fine) {
+  .hist-item { position: relative; min-height: 36px; }
+  .hist-item .history-undo {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    opacity: 0;
+    pointer-events: none;
+    background: #f8fafc;
+    transition: opacity .12s ease;
+  }
+  .hist-item:hover .history-undo,
+  .hist-item:focus-within .history-undo { opacity: 1; pointer-events: auto; }
+  .hist-item:hover .hist-time,
+  .hist-item:focus-within .hist-time { opacity: 0; }
+  .hist-item .history-undo:hover { background: #fdeef0; }
+  .hist-item .history-undo:active { transform: translateY(calc(-50% + 1px)); }
+}
