@@ -57,39 +57,27 @@ def init_lessons(db):
         if not db.execute("SELECT history_seeded FROM lesson_settings WHERE owner_id=?", (uid,)).fetchone()[0]:
             seed_history(db, uid)
             db.execute("UPDATE lesson_settings SET history_seeded=1 WHERE owner_id=?", (uid,))
-    resume_current_windows(db)
+    normalize_automatic_windows(db)
 
 
-def resume_current_windows(db):
-    """A release during a live class must not split it at the last pre-release click."""
-    now = datetime.now(BJ).replace(tzinfo=None)
-    rows = db.execute(
-        "SELECT * FROM lessons WHERE archived_at IS NULL AND source='historical' AND status='review' AND start_at>=?",
-        (now.strftime("%Y-%m-%d 00:00:00"),)).fetchall()
-    for row in rows:
-        last = db.execute("SELECT MAX(m.occurred_at) FROM monthly_score_entries m JOIN lesson_entries le ON le.entry_id=m.id WHERE le.lesson_id=? AND m.voided_at IS NULL",
-                          (row["id"],)).fetchone()[0]
-        if not last or not 0 <= (now-datetime.fromisoformat(last)).total_seconds() <= 1800:
+def normalize_automatic_windows(db):
+    """Remove legacy fixed-duration guesses; never change manually reviewed windows."""
+    for row in db.execute("SELECT * FROM lessons WHERE source='automatic' AND archived_at IS NULL").fetchall():
+        bounds = db.execute(
+            "SELECT MIN(m.occurred_at),MAX(m.occurred_at) FROM lesson_entries le "
+            "JOIN monthly_score_entries m ON m.id=le.entry_id WHERE le.lesson_id=? AND m.voided_at IS NULL",
+            (row["id"],)).fetchone()
+        if not bounds[0]:
             continue
-        minutes = db.execute("SELECT window_minutes FROM lesson_settings WHERE owner_id=?", (row["owner_id"],)).fetchone()[0]
-        end = (datetime.fromisoformat(row["start_at"])+timedelta(minutes=minutes)).strftime("%Y-%m-%d %H:%M:%S")
-        if now >= datetime.fromisoformat(end):
+        start = bounds[0]
+        end = (datetime.fromisoformat(bounds[1])+timedelta(seconds=1)).strftime("%Y-%m-%d %H:%M:%S")
+        if start == row["start_at"] and end == row["end_at"]:
             continue
-        conflicts = db.execute(
-            "SELECT * FROM lessons WHERE owner_id=? AND class_id=? AND id<>? AND archived_at IS NULL AND start_at<? AND end_at>?",
-            (row["owner_id"],row["class_id"],row["id"],end,row["start_at"])).fetchall()
-        # Never override a manually reviewed/edited boundary.
-        if any(c["source"] != "automatic" or c["start_at"] < row["end_at"] for c in conflicts):
+        if db.execute("SELECT 1 FROM lessons WHERE owner_id=? AND class_id=? AND id<>? AND archived_at IS NULL AND start_at<? AND end_at>?",
+                      (row["owner_id"],row["class_id"],row["id"],end,start)).fetchone():
             continue
-        before = dict(row)
-        for child in conflicts:
-            audit(db,child["id"],row["owner_id"],"resume_live_window_merge",dict(child),{"continued_in":row["id"]})
-            db.execute("UPDATE lessons SET archived_at=?,revision=revision+1 WHERE id=?", (now_stamp(),child["id"]))
-            db.execute("DELETE FROM lesson_entries WHERE lesson_id=?", (child["id"],))
-        apply_window(db,row["id"],row["owner_id"],row["class_id"],row["start_at"],end)
-        db.execute("UPDATE lessons SET end_at=?,status='recognized',source='automatic',note=?,revision=revision+1 WHERE id=?",
-                   (end,"升级时延续正在进行的课堂窗口",row["id"]))
-        audit(db,row["id"],row["owner_id"],"resume_live_window",before,{"end_at":end,"merged_automatic_windows":[c["id"] for c in conflicts]})
+        audit(db,row["id"],row["owner_id"],"normalize_recognition_interval",dict(row),{"start_at":start,"end_at":end})
+        db.execute("UPDATE lessons SET start_at=?,end_at=?,revision=revision+1 WHERE id=?", (start,end,row["id"]))
 
 
 def now_stamp():
@@ -154,11 +142,26 @@ def assign_new_scores(db, transaction_ids):
             lid = row[0]["id"]
         else:
             minutes = db.execute("SELECT window_minutes FROM lesson_settings WHERE owner_id=?", (uid,)).fetchone()[0]
-            end = (datetime.fromisoformat(at) + timedelta(minutes=minutes)).strftime("%Y-%m-%d %H:%M:%S")
-            following = db.execute("SELECT MIN(start_at) FROM lessons WHERE owner_id=? AND class_id=? AND archived_at IS NULL AND start_at>?", (uid, cid, at)).fetchone()[0]
-            if following:
-                end = min(end, following)
-            lid = new_lesson(db, uid, cid, at, end, "automatic", "recognized")
+            end = (datetime.fromisoformat(at)+timedelta(seconds=1)).strftime("%Y-%m-%d %H:%M:%S")
+            previous = db.execute(
+                "SELECT l.*, (SELECT MAX(m.occurred_at) FROM lesson_entries le JOIN monthly_score_entries m ON m.id=le.entry_id "
+                "WHERE le.lesson_id=l.id AND m.voided_at IS NULL) AS last_at "
+                "FROM lessons l WHERE l.owner_id=? AND l.class_id=? AND l.archived_at IS NULL "
+                "AND l.start_at<=? ORDER BY l.start_at DESC LIMIT 1", (uid,cid,at)).fetchone()
+            can_extend = bool(previous and previous["last_at"] and
+                              (previous["source"] == "automatic" or
+                               (previous["source"] == "historical" and previous["status"] == "review")) and
+                              0 <= (datetime.fromisoformat(at)-datetime.fromisoformat(previous["last_at"])).total_seconds() <= minutes*60)
+            if can_extend:
+                can_extend = not db.execute(
+                    "SELECT 1 FROM lessons WHERE owner_id=? AND class_id=? AND id<>? AND archived_at IS NULL AND start_at<? AND end_at>?",
+                    (uid,cid,previous["id"],end,previous["start_at"])).fetchone()
+            if can_extend:
+                lid = previous["id"]
+                audit(db,lid,uid,"auto_extend_interval",dict(previous),{"end_at":end})
+                db.execute("UPDATE lessons SET end_at=?,revision=revision+1 WHERE id=?", (end,lid))
+            else:
+                lid = new_lesson(db,uid,cid,at,end,"automatic","recognized")
         db.execute("INSERT INTO lesson_entries(entry_id,lesson_id) VALUES(?,?)", (e["id"], lid))
         db.execute("UPDATE lessons SET revision=revision+1 WHERE id=?", (lid,))
 
@@ -337,7 +340,7 @@ def register_lesson_routes(app, get_db, current_user, login_required, own_class,
         try:
             start = stamp(request.args.get("start"))
             end = stamp(request.args.get("end"))
-            if start >= end or datetime.fromisoformat(end)-datetime.fromisoformat(start) > timedelta(days=3):
+            if start >= end or datetime.fromisoformat(end)-datetime.fromisoformat(start) > timedelta(days=62):
                 raise ValueError()
         except (ValueError, TypeError):
             raise LessonError("记录范围无效")

@@ -1137,3 +1137,39 @@ html { -webkit-text-size-adjust: 100%; }
   .hist-item .history-undo:hover { background: #fdeef0; }
   .hist-item .history-undo:active { transform: translateY(calc(-50% + 1px)); }
 }
+
+/* JF-003 continuous event axis: all records in the selected month share one scale. */
+.timeline-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 16px 0 8px; color: var(--muted); font-size: 12px; }
+.timeline-toolbar > span { margin-right: auto; }
+.timeline-toolbar label { display: flex; align-items: center; gap: 6px; }
+.timeline-toolbar select { font-size: 12px; padding: 7px; }
+.timeline-toolbar button { font-size: 12px; }
+.lesson-timeline-scroll { cursor: grab; background: #fbfdfc; }
+.lesson-timeline-scroll.panning { cursor: grabbing; user-select: none; }
+#lesson-timeline { margin-right: 100px; }
+.lesson-axis-line { position: absolute; left: 0; right: 0; height: 2px; background: #cbd5e1; pointer-events: none; }
+.lesson-tick { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.lesson-window-shade { top: 35px; background: rgba(16,185,129,.11); }
+.lesson-boundary { top: 32px; border-left-color: #059669; }
+.lesson-boundary span { background: #059669; }
+.lesson-other-window { position: absolute; top: 35px; bottom: 0; background: rgba(148,163,184,.06); border-left: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1; pointer-events: none; }
+.lesson-other-window button { position: absolute; top: 2px; left: 3px; padding: 3px 6px; font-size: 10px; color: #64748b; white-space: nowrap; background: #edf1f7; pointer-events: auto; }
+.lesson-event { position: absolute; width: 20px; height: 20px; padding: 0; transform: translate(-50%,-50%); color: #059669; background: transparent; border-radius: 50%; z-index: 2; cursor: pointer; }
+.lesson-event.negative { color: #e45536; }
+.lesson-event.voided,.lesson-event.observed { color: #94a3b8; }
+.lesson-event:active { transform: translate(-50%,-50%); }
+.lesson-event-stem { position: absolute; left: 9px; bottom: 50%; width: 1px; height: var(--stem); background: currentColor; opacity: .3; pointer-events: none; }
+.lesson-event-dot { position: absolute; width: 9px; height: 9px; left: 5px; top: 5px; background: currentColor; border-radius: 50%; border: 1px solid white; }
+.lesson-event-value { position: absolute; bottom: calc(var(--stem) + 7px); left: 50%; transform: translateX(-50%); background: white; padding: 3px 7px; border: 1px solid currentColor; border-radius: 7px; font-size: 12px; font-weight: 650; min-width: 30px; }
+.lesson-event.in-window .lesson-event-dot { box-shadow: 0 0 0 4px rgba(16,185,129,.13); }
+.lesson-event:hover,.lesson-event:focus-visible { z-index: 4; outline: 2px solid currentColor; outline-offset: 2px; }
+.lesson-event-card { background: #f5f8fc; border: 1px solid var(--line); padding: 12px 16px; border-radius: 10px; margin-top: 12px; font-size: 13px; }
+.lesson-event-card p { margin: 5px 0; font-size: 12px; }
+.lesson-affected { border-left: 3px solid #f59e0b; padding: 8px 14px; margin: 14px 0; background: #fffbef; font-size: 12px; }
+.lesson-affected h4 { margin: 0 0 6px; }
+#lesson-window-select { max-width: 100%; }
+@media (max-width: 600px) {
+  .timeline-toolbar > span { flex: 1 1 100%; }
+  #lesson-window-select { flex: 1 1 100%; min-width: 0; }
+}
+.lesson-axis-time { position: absolute; padding: 2px 5px; white-space: nowrap; font-size: 10px; color: var(--muted); pointer-events: none; }

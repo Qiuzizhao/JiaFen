@@ -14,7 +14,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png?v=20260915">
   <link rel="icon" href="/favicon.ico?v=20260915" sizes="any">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=20260915">
-  <link rel="stylesheet" href="/style.css?v=20261102f">
+  <link rel="stylesheet" href="/style.css?v=20261102h">
 </head>
 <body>
 
@@ -169,6 +169,7 @@
       <div class="lessons-toolbar">
         <select id="lessons-class" aria-label="选择班级"></select>
         <input id="lessons-month" type="month" aria-label="选择月份">
+        <button id="lesson-edit" class="ghost" type="button">编辑时间轴</button>
         <button id="lessons-settings" class="ghost" type="button">设置</button>
         <button id="lessons-new" class="primary" type="button">补建课堂</button>
       </div>
@@ -186,11 +187,19 @@
       <div class="modal-actions"><button id="lesson-form-cancel" type="button" class="ghost">取消</button><button type="submit" class="primary">确认补建</button></div>
     </form>
   </div>
+  <div id="lesson-split-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="lesson-split-title">
+    <form id="lesson-split-form" class="modal-box lesson-form-box">
+      <div class="modal-head"><h3 id="lesson-split-title">拆分课堂</h3><button id="lesson-split-close" type="button" class="icon-btn" aria-label="关闭">✕</button></div>
+      <label for="lesson-split-at">拆分时间（北京时间）</label><input id="lesson-split-at" type="datetime-local" step="1" required>
+      <p id="lesson-split-preview" class="muted"></p><p id="lesson-split-error" class="err" role="alert"></p>
+      <div class="modal-actions"><button id="lesson-split-cancel" type="button" class="ghost">取消</button><button type="submit" class="primary">确认拆分</button></div>
+    </form>
+  </div>
   <div id="lesson-settings-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="lesson-settings-title">
     <form id="lesson-settings-form" class="modal-box lesson-form-box">
       <h3 id="lesson-settings-title">课堂识别设置</h3>
-      <label for="lesson-window">新课堂默认时间窗口（分钟）</label><input id="lesson-window" type="number" min="5" max="360" required>
-      <p class="muted">从首次记分起算，仅用于新课堂。历史课堂和已编辑边界保持原样。</p>
+      <label for="lesson-window">自动识别间隔（分钟）</label><input id="lesson-window" type="number" min="5" max="360" required>
+      <p class="muted">相邻记分间隔不超过此值时，可能归为同一课堂；不代表实际课长。已人工调整的边界保持原样。</p>
       <p id="lesson-settings-error" class="err" role="alert"></p>
       <div class="modal-actions"><button id="lesson-settings-cancel" type="button" class="ghost">取消</button><button type="submit" class="primary">保存</button></div>
     </form>
@@ -401,8 +410,8 @@
     <div id="projector-board" class="projector-board"></div>
   </div>
 
-  <script src="/app.js?v=20261102e"></script>
-  <script src="/lessons.js?v=20261102c"></script>
+  <script src="/app.js?v=20261102h"></script>
+  <script src="/lessons.js?v=20261102h"></script>
   <script src="/archives.js?v=20261010d"></script>
 </body>
 </html>

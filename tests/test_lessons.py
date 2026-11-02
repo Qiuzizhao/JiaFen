@@ -49,22 +49,24 @@ class LessonTests(unittest.TestCase):
                 "groups", "transactions", "monthly_score_entries", "reward_opportunities",
                 "reward_progress", "ranking_group_history", "ranking_archives"]}
 
-    def test_default_two_hour_fixed_window_and_settings_not_retroactive(self):
-        self.score("2026-11-02 08:10:00", 1)
-        self.score("2026-11-02 08:18:00", 2, self.gids[1])
-        self.score("2026-11-02 08:35:00", -1)
-        self.score("2026-11-02 09:10:00", 1)
-        rows = self.lessons()["lessons"]
-        self.assertEqual(len(rows), 1)  # Explicit 2h requirement, not a fabricated timetable
-        self.assertEqual(rows[0]["end_at"], "2026-11-02 10:10:00")
-        self.assertEqual(rows[0]["summary"]["net"], 3)
-        self.assertEqual(self.c.put("/api/lessons/settings", json={"window_minutes": 30}).status_code, 200)
-        self.score("2026-11-02 10:10:00", 4)  # end-exclusive
-        self.score("2026-11-02 10:40:00", 1)
-        rows = self.lessons()["lessons"]
-        self.assertEqual(len(rows), 3)
-        self.assertEqual(rows[0]["end_at"], "2026-11-02 10:10:00")
-        self.assertEqual(rows[1]["end_at"], "2026-11-02 10:40:00")
+    def test_configurable_gap_is_not_fixed_duration(self):
+        self.score("2026-11-02 08:10:00",1)
+        self.score("2026-11-02 08:18:00",2,self.gids[1])
+        self.score("2026-11-02 08:35:00",-1)
+        self.score("2026-11-02 09:10:00",1)
+        rows=self.lessons()["lessons"]
+        self.assertEqual(len(rows),1)
+        self.assertEqual(rows[0]["end_at"],"2026-11-02 09:10:01")
+        self.assertEqual(rows[0]["summary"]["net"],3)
+        self.c.put("/api/lessons/settings",json={"window_minutes":30})
+        # Gap over 30m creates a new class; changing setting does not rewrite old windows.
+        self.score("2026-11-02 10:10:00",4)
+        self.score("2026-11-02 10:40:00",1)
+        self.score("2026-11-02 11:10:01",1)
+        rows=self.lessons()["lessons"]
+        self.assertEqual(len(rows),3)
+        self.assertEqual(rows[0]["end_at"],"2026-11-02 09:10:01")
+        self.assertEqual(rows[1]["end_at"],"2026-11-02 10:40:01")
 
     def test_preview_and_boundary_edit_reassign_without_touching_score_sources(self):
         self.score("2026-11-02 08:10:00", 5)
@@ -84,7 +86,7 @@ class LessonTests(unittest.TestCase):
 
     def test_overlap_is_previewed_and_save_is_atomic(self):
         self.score("2026-11-02 08:10:00", 1)
-        self.score("2026-11-02 10:10:00", 2)
+        self.score("2026-11-02 10:10:01", 2)
         first, second = self.lessons()["lessons"]
         before = self.originals()
         p = self.c.post(f"/api/lessons/{first['id']}/preview", json={"start_at": first["start_at"], "end_at": "2026-11-02 11:00:00"}).json
@@ -219,7 +221,7 @@ class LessonTests(unittest.TestCase):
         self.assertEqual(r.status_code,400,r.json)
         self.assertEqual(before,self.originals())
 
-    def test_deployment_during_current_class_resumes_window(self):
+    def test_history_is_not_extended_to_an_artificial_two_hour_duration(self):
         from datetime import timedelta
         import lessons
         real_now = lessons.datetime.now(lessons.BJ).replace(tzinfo=None)
@@ -235,12 +237,58 @@ class LessonTests(unittest.TestCase):
         before = self.originals();m.init_db()
         rows = self.lessons(real_now.strftime("%Y-%m"))["lessons"]
         self.assertEqual(len(rows),1)
-        self.assertEqual(rows[0]["source"],"automatic")
-        self.assertEqual(rows[0]["status"],"recognized")
-        expected = (datetime.fromisoformat(first)+timedelta(minutes=120)).strftime("%Y-%m-%d %H:%M:%S")
+        self.assertEqual(rows[0]["source"],"historical")
+        self.assertEqual(rows[0]["status"],"review")
+        expected = (datetime.fromisoformat(last)+timedelta(seconds=1)).strftime("%Y-%m-%d %H:%M:%S")
         self.assertEqual(rows[0]["end_at"],expected)
         self.assertEqual(rows[0]["summary"]["net"],3)
         self.assertEqual(before,self.originals())
+
+    def test_interval_chains_beyond_two_hours_without_inventing_duration(self):
+        for at in ["08:00:00","09:50:00","11:40:00","13:40:00"]:
+            self.score("2026-11-02 "+at,1)
+        rows=self.lessons()["lessons"]
+        self.assertEqual(len(rows),1)
+        self.assertEqual(rows[0]["start_at"],"2026-11-02 08:00:00")
+        self.assertEqual(rows[0]["end_at"],"2026-11-02 13:40:01")
+        self.score("2026-11-02 15:40:01",1)
+        self.assertEqual(len(self.lessons()["lessons"]),2)
+
+    def test_automatic_interval_never_overrides_manual_boundary(self):
+        self.c.post(f"/api/classes/{self.cid}/lessons",json={"start_at":"2026-11-02 08:00:00","end_at":"2026-11-02 08:40:00"})
+        self.score("2026-11-02 08:10:00",1)
+        self.score("2026-11-02 08:50:00",2)
+        rows=self.lessons()["lessons"]
+        self.assertEqual(len(rows),2)
+        self.assertEqual(rows[0]["source"],"manual")
+        self.assertEqual(rows[0]["end_at"],"2026-11-02 08:40:00")
+        self.assertEqual([r["summary"]["net"] for r in rows],[1,2])
+
+    def test_complete_month_axis_records_not_per_lesson_or_per_day(self):
+        self.score("2026-09-01 08:10:00",1)
+        self.score("2026-09-30 08:10:00",-2)
+        before=self.originals()
+        r=self.c.get(f"/api/classes/{self.cid}/lesson-records?start=2026-09-01&end=2026-10-01")
+        self.assertEqual(r.status_code,200)
+        self.assertEqual([e["occurred_at"] for e in r.json],["2026-09-01 08:10:00","2026-09-30 08:10:00"])
+        self.assertEqual(before,self.originals())
+        self.assertEqual(self.c.get(f"/api/classes/{self.cid}/lesson-records?start=2026-01-01&end=2026-12-31").status_code,400)
+
+    def test_legacy_automatic_window_normalization_preserves_original_data(self):
+        self.score("2026-09-01 08:10:00",1)
+        row=self.lessons("2026-09")["lessons"][0]
+        with sqlite3.connect(m.DB_PATH) as db:
+            db.execute("UPDATE lessons SET end_at='2026-09-01 10:10:00' WHERE id=?",(row["id"],))
+        before=self.originals()
+        m.init_db()
+        normalized=self.lessons("2026-09")["lessons"][0]
+        self.assertEqual(normalized["end_at"],"2026-09-01 08:10:01")
+        self.assertEqual(before,self.originals())
+        with sqlite3.connect(m.DB_PATH) as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM lesson_revisions WHERE action='normalize_recognition_interval'").fetchone()[0],1)
+        m.init_db()
+        with sqlite3.connect(m.DB_PATH) as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM lesson_revisions WHERE action='normalize_recognition_interval'").fetchone()[0],1)
 
 
 if __name__ == "__main__": unittest.main()
