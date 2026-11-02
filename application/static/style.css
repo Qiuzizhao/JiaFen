@@ -1111,3 +1111,9 @@ html { -webkit-text-size-adjust: 100%; }
 .history-undo { flex: none; padding: 5px 7px; border-radius: 6px; background: transparent; color: var(--down-dark); font-size: 12px; white-space: nowrap; min-height: 30px; }
 .history-undo:hover { background: #fdeef0; }
 .history-undo:disabled { color: #94a3b8; cursor: default; }
+
+.group-create-box { width: min(360px, 100%); }
+.group-create-box label { display: block; margin: 16px 0 7px; font-size: 13px; color: var(--muted); }
+.group-create-box input { width: 100%; min-width: 0; }
+.group-create-box .err:empty { display: none; }
+.group-create-box .modal-actions { margin-top: 18px; }

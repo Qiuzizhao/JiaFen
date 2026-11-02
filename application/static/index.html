@@ -14,7 +14,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png?v=20260915">
   <link rel="icon" href="/favicon.ico?v=20260915" sizes="any">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=20260915">
-  <link rel="stylesheet" href="/style.css?v=20261102d">
+  <link rel="stylesheet" href="/style.css?v=20261102e">
 </head>
 <body>
 
@@ -153,6 +153,16 @@
   <!-- 移动端班级弹窗背景 -->
   <div id="class-backdrop" class="class-backdrop"></div>
 
+  <div id="group-create-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="group-create-title">
+    <form id="group-create-form" class="modal-box group-create-box">
+      <div class="modal-head"><h3 id="group-create-title">添加小组</h3><button id="group-create-close" class="icon-btn" type="button" aria-label="关闭">✕</button></div>
+      <p id="group-create-class" class="muted"></p>
+      <label for="group-create-name">小组名称</label>
+      <input id="group-create-name" type="text" placeholder="输入小组名称" autocomplete="off" required>
+      <p id="group-create-error" class="err" role="alert"></p>
+      <div class="modal-actions"><button id="group-create-cancel" class="ghost" type="button">取消</button><button id="group-create-save" class="primary" type="submit">添加</button></div>
+    </form>
+  </div>
   <div id="lessons-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="lessons-title">
     <div class="modal-box lessons-box">
       <div class="modal-head"><h3 id="lessons-title">课堂记录</h3><button id="lessons-close" class="icon-btn" type="button" aria-label="关闭">✕</button></div>
@@ -391,7 +401,7 @@
     <div id="projector-board" class="projector-board"></div>
   </div>
 
-  <script src="/app.js?v=20261102d"></script>
+  <script src="/app.js?v=20261102e"></script>
   <script src="/lessons.js?v=20261102c"></script>
   <script src="/archives.js?v=20261010d"></script>
 </body>

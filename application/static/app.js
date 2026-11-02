@@ -451,6 +451,7 @@ function showLogin() {
   state.authed = false;
   state.user = null;
   document.dispatchEvent(new Event('jiafen:lesson-session-ended'));
+  $('#group-create-modal').classList.add('hidden');
   $('#app').classList.add('hidden');
   $('#login').classList.remove('hidden');
   $('#login-pw').value = '';
@@ -1079,16 +1080,53 @@ async function delClass(id) {
     await refresh();
   } catch (e) { alert(e.message); }
 }
-async function createGroup() {
+let groupCreateTarget = null;
+let groupCreateBusy = false;
+function createGroup() {
   const cls = getCurrentClass();
-  if (!cls) { alert('请先选择班级'); return; }
-  const name = prompt('输入小组名称');
-  if (name === null || !name.trim()) return;
-  try {
-    await api('/api/classes/' + cls.id + '/groups', { method: 'POST', body: { name: name.trim(), color: pickColor() } });
-    await refresh();
-  } catch (e) { alert(e.message); }
+  if (!cls) return;
+  groupCreateTarget = { classId: cls.id, userId: state.user?.id };
+  $('#group-create-class').textContent = cls.name;
+  let number = cls.groups.length + 1;
+  while (cls.groups.some(g => g.name === '第' + number + '组')) number++;
+  $('#group-create-name').value = '第' + number + '组';
+  $('#group-create-error').textContent = '';
+  $('#group-create-modal').classList.remove('hidden');
+  $('#group-create-name').focus();
+  $('#group-create-name').select();
 }
+function closeGroupCreate() {
+  if (groupCreateBusy) return;
+  $('#group-create-modal').classList.add('hidden');
+  groupCreateTarget = null;
+  $('#btn-add-group').focus();
+}
+async function saveGroupCreate(event) {
+  event.preventDefault();
+  if (groupCreateBusy || !groupCreateTarget) return;
+  const target = groupCreateTarget;
+  const name = $('#group-create-name').value.trim();
+  if (!name) { $('#group-create-error').textContent = '请输入小组名称'; $('#group-create-name').focus(); return; }
+  if (target.userId !== state.user?.id || !state.classes.some(c => c.id === target.classId)) {
+    $('#group-create-error').textContent = '当前班级已变化，请关闭后重新添加'; return;
+  }
+  groupCreateBusy = true;
+  $('#group-create-save').disabled = true;
+  $('#group-create-error').textContent = '';
+  try {
+    await api('/api/classes/' + target.classId + '/groups', { method: 'POST', body: { name, color: pickColor() } });
+    // The server response confirms creation before the dialog closes.
+    groupCreateBusy = false;
+    closeGroupCreate();
+    await refresh();
+  } catch (e) {
+    $('#group-create-error').textContent = e.message;
+  } finally {
+    groupCreateBusy = false;
+    $('#group-create-save').disabled = false;
+  }
+}
+
 async function renameGroup(id) {
   const g = state.classes.flatMap(c => c.groups).find(x => x.id === id);
   const name = prompt('重命名小组', g ? g.name : '');
@@ -2805,6 +2843,13 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#btn-class-close').addEventListener('click', closeMobileClassPanel);
   $('#class-backdrop').addEventListener('click', closeMobileClassPanel);
   $('#btn-add-group').addEventListener('click', createGroup);
+  $('#group-create-form').addEventListener('submit', saveGroupCreate);
+  $('#group-create-close').addEventListener('click', closeGroupCreate);
+  $('#group-create-cancel').addEventListener('click', closeGroupCreate);
+  $('#group-create-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeGroupCreate(); });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && !$('#group-create-modal').classList.contains('hidden')) closeGroupCreate();
+  });
   $('#btn-roster').addEventListener('click', openRoster);
   $('#roster-close').addEventListener('click', closeRoster);
   $('#roster-import-btn').addEventListener('click', () => rosterImportOpen('', false));
