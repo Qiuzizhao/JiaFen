@@ -1,0 +1,521 @@
+{
+  "description": "经用户核对的真实三(1)班9月积分样本；不含学生名单或账号凭据。9月8日为疑似测试，9月14/21/28日为课堂。",
+  "class_name": "三(1)班",
+  "groups": [
+    {
+      "id": 1,
+      "name": "第1组"
+    },
+    {
+      "id": 2,
+      "name": "第2组"
+    },
+    {
+      "id": 3,
+      "name": "第3组"
+    },
+    {
+      "id": 4,
+      "name": "第4组"
+    },
+    {
+      "id": 5,
+      "name": "第5组"
+    },
+    {
+      "id": 6,
+      "name": "第6组"
+    },
+    {
+      "id": 7,
+      "name": "第7组"
+    },
+    {
+      "id": 8,
+      "name": "第8组"
+    },
+    {
+      "id": 9,
+      "name": "第9组"
+    }
+  ],
+  "transactions": [
+    {
+      "id": 2,
+      "group_id": 3,
+      "class_id": 1,
+      "delta": 5,
+      "reason": "",
+      "created_at": "2026-09-08 09:57:36",
+      "batch_id": null
+    },
+    {
+      "id": 3,
+      "group_id": 3,
+      "class_id": 1,
+      "delta": -5,
+      "reason": "",
+      "created_at": "2026-09-08 09:57:39",
+      "batch_id": null
+    },
+    {
+      "id": 286,
+      "group_id": 7,
+      "class_id": 1,
+      "delta": 1,
+      "reason": "",
+      "created_at": "2026-09-14 11:47:42",
+      "batch_id": null
+    },
+    {
+      "id": 287,
+      "group_id": 3,
+      "class_id": 1,
+      "delta": 1,
+      "reason": "",
+      "created_at": "2026-09-14 11:51:14",
+      "batch_id": null
+    },
+    {
+      "id": 288,
+      "group_id": 7,
+      "class_id": 1,
+      "delta": 1,
+      "reason": "",
+      "created_at": "2026-09-14 11:51:30",
+      "batch_id": null
+    },
+    {
+      "id": 289,
+      "group_id": 7,
+      "class_id": 1,
+      "delta": 1,
+      "reason": "",
+      "created_at": "2026-09-14 11:53:39",
+      "batch_id": null
+    },
+    {
+      "id": 290,
+      "group_id": 9,
+      "class_id": 1,
+      "delta": 1,
+      "reason": "",
+      "created_at": "2026-09-14 11:54:29",
+      "batch_id": null
+    },
+    {
+      "id": 291,
+      "group_id": 4,
+      "class_id": 1,
+      "delta": 1,
+      "reason": "",
+      "created_at": "2026-09-14 11:54:44",
+      "batch_id": null
+    },
+    {
+      "id": 292,
+      "group_id": 1,
+      "class_id": 1,
+      "delta": 1,
+      "reason": "",
+      "created_at": "2026-09-14 11:55:05",
+      "batch_id": null
+    },
+    {
+      "id": 293,
+      "group_id": 2,
+      "class_id": 1,
+      "delta": 1,
+      "reason": "",
+      "created_at": "2026-09-14 11:55:18",
+      "batch_id": null
+    },
+    {
+      "id": 294,
+      "group_id": 1,
+      "class_id": 1,
+      "delta": 1,
+      "reason": "",
+      "created_at": "2026-09-14 12:08:16",
+      "batch_id": null
+    },
+    {
+      "id": 295,
+      "group_id": 6,
+      "class_id": 1,
+      "delta": 1,
+      "reason": "",
+      "created_at": "2026-09-14 12:08:17",
+      "batch_id": null
+    },
+    {
+      "id": 296,
+      "group_id": 9,
+      "class_id": 1,
+      "delta": 1,
+      "reason": "",
+      "created_at": "2026-09-14 12:08:19",
+      "batch_id": null
+    },
+    {
+      "id": 625,
+      "group_id": 7,
+      "class_id": 1,
+      "delta": -1,
+      "reason": "",
+      "created_at": "2026-09-21 11:37:37",
+      "batch_id": null
+    },
+    {
+      "id": 626,
+      "group_id": 3,
+      "class_id": 1,
+      "delta": -1,
+      "reason": "",
+      "created_at": "2026-09-21 11:45:20",
+      "batch_id": null
+    },
+    {
+      "id": 627,
+      "group_id": 1,
+      "class_id": 1,
+      "delta": 1,
+      "reason": "",
+      "created_at": "2026-09-21 11:49:25",
+      "batch_id": null
+    },
+    {
+      "id": 628,
+      "group_id": 1,
+      "class_id": 1,
+      "delta": 1,
+      "reason": "",
+      "created_at": "2026-09-21 11:49:31",
+      "batch_id": null
+    },
+    {
+      "id": 629,
+      "group_id": 2,
+      "class_id": 1,
+      "delta": 1,
+      "reason": "",
+      "created_at": "2026-09-21 11:49:39",
+      "batch_id": null
+    },
+    {
+      "id": 630,
+      "group_id": 3,
+      "class_id": 1,
+      "delta": 1,
+      "reason": "",
+      "created_at": "2026-09-21 11:49:50",
+      "batch_id": null
+    },
+    {
+      "id": 631,
+      "group_id": 4,
+      "class_id": 1,
+      "delta": 1,
+      "reason": "",
+      "created_at": "2026-09-21 11:49:59",
+      "batch_id": null
+    },
+    {
+      "id": 632,
+      "group_id": 4,
+      "class_id": 1,
+      "delta": 1,
+      "reason": "",
+      "created_at": "2026-09-21 11:50:00",
+      "batch_id": null
+    },
+    {
+      "id": 633,
+      "group_id": 6,
+      "class_id": 1,
+      "delta": 1,
+      "reason": "",
+      "created_at": "2026-09-21 11:50:11",
+      "batch_id": null
+    },
+    {
+      "id": 634,
+      "group_id": 7,
+      "class_id": 1,
+      "delta": 1,
+      "reason": "",
+      "created_at": "2026-09-21 11:50:19",
+      "batch_id": null
+    },
+    {
+      "id": 635,
+      "group_id": 8,
+      "class_id": 1,
+      "delta": 1,
+      "reason": "",
+      "created_at": "2026-09-21 11:50:26",
+      "batch_id": null
+    },
+    {
+      "id": 636,
+      "group_id": 4,
+      "class_id": 1,
+      "delta": 1,
+      "reason": "",
+      "created_at": "2026-09-21 12:05:20",
+      "batch_id": null
+    },
+    {
+      "id": 637,
+      "group_id": 6,
+      "class_id": 1,
+      "delta": 1,
+      "reason": "",
+      "created_at": "2026-09-21 12:05:30",
+      "batch_id": null
+    },
+    {
+      "id": 638,
+      "group_id": 5,
+      "class_id": 1,
+      "delta": 1,
+      "reason": "",
+      "created_at": "2026-09-21 12:05:34",
+      "batch_id": null
+    },
+    {
+      "id": 639,
+      "group_id": 8,
+      "class_id": 1,
+      "delta": 1,
+      "reason": "",
+      "created_at": "2026-09-21 12:05:39",
+      "batch_id": null
+    },
+    {
+      "id": 1072,
+      "group_id": 2,
+      "class_id": 1,
+      "delta": -1,
+      "reason": "",
+      "created_at": "2026-09-28 11:48:49",
+      "batch_id": null
+    },
+    {
+      "id": 1073,
+      "group_id": 1,
+      "class_id": 1,
+      "delta": 1,
+      "reason": "",
+      "created_at": "2026-09-28 11:57:58",
+      "batch_id": null
+    },
+    {
+      "id": 1074,
+      "group_id": 1,
+      "class_id": 1,
+      "delta": 1,
+      "reason": "",
+      "created_at": "2026-09-28 11:57:59",
+      "batch_id": null
+    },
+    {
+      "id": 1075,
+      "group_id": 1,
+      "class_id": 1,
+      "delta": 1,
+      "reason": "",
+      "created_at": "2026-09-28 11:58:00",
+      "batch_id": null
+    },
+    {
+      "id": 1077,
+      "group_id": 2,
+      "class_id": 1,
+      "delta": 1,
+      "reason": "",
+      "created_at": "2026-09-28 11:58:20",
+      "batch_id": null
+    },
+    {
+      "id": 1078,
+      "group_id": 2,
+      "class_id": 1,
+      "delta": 1,
+      "reason": "",
+      "created_at": "2026-09-28 11:58:24",
+      "batch_id": null
+    },
+    {
+      "id": 1079,
+      "group_id": 3,
+      "class_id": 1,
+      "delta": 1,
+      "reason": "",
+      "created_at": "2026-09-28 11:58:29",
+      "batch_id": null
+    },
+    {
+      "id": 1080,
+      "group_id": 3,
+      "class_id": 1,
+      "delta": 1,
+      "reason": "",
+      "created_at": "2026-09-28 11:58:29",
+      "batch_id": null
+    },
+    {
+      "id": 1081,
+      "group_id": 4,
+      "class_id": 1,
+      "delta": 1,
+      "reason": "",
+      "created_at": "2026-09-28 11:58:31",
+      "batch_id": null
+    },
+    {
+      "id": 1082,
+      "group_id": 4,
+      "class_id": 1,
+      "delta": 1,
+      "reason": "",
+      "created_at": "2026-09-28 11:58:31",
+      "batch_id": null
+    },
+    {
+      "id": 1083,
+      "group_id": 4,
+      "class_id": 1,
+      "delta": 1,
+      "reason": "",
+      "created_at": "2026-09-28 11:58:31",
+      "batch_id": null
+    },
+    {
+      "id": 1084,
+      "group_id": 5,
+      "class_id": 1,
+      "delta": 1,
+      "reason": "",
+      "created_at": "2026-09-28 11:58:38",
+      "batch_id": null
+    },
+    {
+      "id": 1085,
+      "group_id": 6,
+      "class_id": 1,
+      "delta": 1,
+      "reason": "",
+      "created_at": "2026-09-28 11:58:41",
+      "batch_id": null
+    },
+    {
+      "id": 1086,
+      "group_id": 7,
+      "class_id": 1,
+      "delta": 1,
+      "reason": "",
+      "created_at": "2026-09-28 11:58:48",
+      "batch_id": null
+    },
+    {
+      "id": 1087,
+      "group_id": 7,
+      "class_id": 1,
+      "delta": 1,
+      "reason": "",
+      "created_at": "2026-09-28 11:58:48",
+      "batch_id": null
+    },
+    {
+      "id": 1088,
+      "group_id": 8,
+      "class_id": 1,
+      "delta": 1,
+      "reason": "",
+      "created_at": "2026-09-28 11:58:51",
+      "batch_id": null
+    },
+    {
+      "id": 1089,
+      "group_id": 8,
+      "class_id": 1,
+      "delta": 1,
+      "reason": "",
+      "created_at": "2026-09-28 11:58:52",
+      "batch_id": null
+    },
+    {
+      "id": 1090,
+      "group_id": 9,
+      "class_id": 1,
+      "delta": 1,
+      "reason": "",
+      "created_at": "2026-09-28 11:58:57",
+      "batch_id": null
+    },
+    {
+      "id": 1091,
+      "group_id": 9,
+      "class_id": 1,
+      "delta": 1,
+      "reason": "",
+      "created_at": "2026-09-28 11:58:57",
+      "batch_id": null
+    },
+    {
+      "id": 1092,
+      "group_id": 6,
+      "class_id": 1,
+      "delta": 1,
+      "reason": "",
+      "created_at": "2026-09-28 11:59:31",
+      "batch_id": null
+    },
+    {
+      "id": 1093,
+      "group_id": 1,
+      "class_id": 1,
+      "delta": 1,
+      "reason": "",
+      "created_at": "2026-09-28 12:01:01",
+      "batch_id": null
+    },
+    {
+      "id": 1094,
+      "group_id": 2,
+      "class_id": 1,
+      "delta": 1,
+      "reason": "",
+      "created_at": "2026-09-28 12:01:02",
+      "batch_id": null
+    },
+    {
+      "id": 1095,
+      "group_id": 4,
+      "class_id": 1,
+      "delta": 1,
+      "reason": "",
+      "created_at": "2026-09-28 12:01:08",
+      "batch_id": null
+    },
+    {
+      "id": 1096,
+      "group_id": 6,
+      "class_id": 1,
+      "delta": 1,
+      "reason": "",
+      "created_at": "2026-09-28 12:01:13",
+      "batch_id": null
+    },
+    {
+      "id": 1097,
+      "group_id": 8,
+      "class_id": 1,
+      "delta": 1,
+      "reason": "",
+      "created_at": "2026-09-28 12:01:20",
+      "batch_id": null
+    }
+  ]
+}

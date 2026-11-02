@@ -410,7 +410,7 @@ async function api(path, opts = {}) {
     cfg.body = JSON.stringify(cfg.body);
     cfg.headers['Content-Type'] = 'application/json';
   }
-  const mutating = (cfg.method || 'GET').toUpperCase() !== 'GET';
+  const mutating = (cfg.method || 'GET').toUpperCase() !== 'GET' && !path.endsWith('/preview');
   const authRequest = /^\/api\/(login|register|logout)(?:[?#]|$)/.test(path);
   if (mutating && !authRequest && (!sessionVerified || !dataReady)) {
     if (window.ReactNativeWebView) {
@@ -435,6 +435,7 @@ async function api(path, opts = {}) {
     if (mutating) { pendingOps--; renderSyncStatus(); }
     if (mutating && succeeded) {
       scheduleStartupSnapshot();
+      document.dispatchEvent(new Event('jiafen:lessons'));
       scheduleMonthlyLeaderboardRefresh();
     }
   }
@@ -449,6 +450,7 @@ function showLogin() {
   if (es) es.close();
   state.authed = false;
   state.user = null;
+  document.dispatchEvent(new Event('jiafen:lesson-session-ended'));
   $('#app').classList.add('hidden');
   $('#login').classList.remove('hidden');
   $('#login-pw').value = '';
@@ -894,6 +896,7 @@ async function refresh() {
     dataReady = true;
     scheduleMonthlyLeaderboardRefresh();
     renderDashboard();
+    document.dispatchEvent(new Event('jiafen:lessons'));
     renderSyncStatus();
     // 名单不进分数刷新链路：只有名单本身变了才重画，且拖拽中绝不重建 DOM
     if (state.rosterOpen && !state.dragActive && rosterSig(getCurrentClass()) !== state.rosterSig) renderRoster();
@@ -1333,6 +1336,8 @@ async function syncClassRoster(cid) {
 
 // 其它设备的改动：能局部更新就局部更新，只有结构性变化才整页重新拉取
 function handleRemoteUpdate(data) {
+  if (typeof document !== 'undefined') document.dispatchEvent(new CustomEvent('jiafen:lessons', { detail: data }));
+  if (data.kind === 'lessons') return;
   if (typeof scheduleMonthlyLeaderboardRefresh === 'function') scheduleMonthlyLeaderboardRefresh();
   if (state.rewardOpen && !(data.client && data.client === CLIENT_ID)) refreshRewards();
   if (data.client && data.client === CLIENT_ID) return;   // 自己的改动已本地生效

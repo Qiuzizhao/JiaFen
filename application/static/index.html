@@ -14,7 +14,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png?v=20260915">
   <link rel="icon" href="/favicon.ico?v=20260915" sizes="any">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=20260915">
-  <link rel="stylesheet" href="/style.css?v=20261102a">
+  <link rel="stylesheet" href="/style.css?v=20261102b">
 </head>
 <body>
 
@@ -46,6 +46,7 @@
       <div class="brand">课堂小组积分 <span id="sync-status" class="sync-status offline" title="正在后台连接并核对数据">未同步</span></div>
       <div class="actions">
         <button id="btn-rewards" class="ghost" aria-pressed="false">奖励</button>
+        <button id="btn-lessons" class="ghost" type="button">课堂</button>
         <button id="btn-archives" class="ghost" type="button" aria-haspopup="dialog" aria-controls="archives-modal">归档</button>
         <button id="btn-classes" class="ghost">班级</button>
         <div class="backup-wrap">
@@ -152,6 +153,38 @@
   <!-- 移动端班级弹窗背景 -->
   <div id="class-backdrop" class="class-backdrop"></div>
 
+  <div id="lessons-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="lessons-title">
+    <div class="modal-box lessons-box">
+      <div class="modal-head"><h3 id="lessons-title">课堂记录</h3><button id="lessons-close" class="icon-btn" type="button" aria-label="关闭">✕</button></div>
+      <div class="lessons-toolbar">
+        <select id="lessons-class" aria-label="选择班级"></select>
+        <input id="lessons-month" type="month" aria-label="选择月份">
+        <button id="lessons-settings" class="ghost" type="button">设置</button>
+        <button id="lessons-new" class="primary" type="button">补建课堂</button>
+      </div>
+      <p id="lessons-error" class="err" role="alert"></p>
+      <div id="lessons-circles"></div>
+      <div id="lesson-detail"></div>
+    </div>
+  </div>
+  <div id="lesson-form-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="lesson-form-title">
+    <form id="lesson-form" class="modal-box lesson-form-box">
+      <div class="modal-head"><h3 id="lesson-form-title">补建课堂</h3><button id="lesson-form-close" class="icon-btn" type="button" aria-label="关闭">✕</button></div>
+      <label for="lesson-form-start">开始时间（北京时间）</label><input id="lesson-form-start" type="datetime-local" step="1" required>
+      <label for="lesson-form-end">结束时间</label><input id="lesson-form-end" type="datetime-local" step="1" required>
+      <p id="lesson-form-error" class="err" role="alert"></p>
+      <div class="modal-actions"><button id="lesson-form-cancel" type="button" class="ghost">取消</button><button type="submit" class="primary">确认补建</button></div>
+    </form>
+  </div>
+  <div id="lesson-settings-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="lesson-settings-title">
+    <form id="lesson-settings-form" class="modal-box lesson-form-box">
+      <h3 id="lesson-settings-title">课堂识别设置</h3>
+      <label for="lesson-window">新课堂默认时间窗口（分钟）</label><input id="lesson-window" type="number" min="5" max="360" required>
+      <p class="muted">从首次记分起算，仅用于新课堂。历史课堂和已编辑边界保持原样。</p>
+      <p id="lesson-settings-error" class="err" role="alert"></p>
+      <div class="modal-actions"><button id="lesson-settings-cancel" type="button" class="ghost">取消</button><button type="submit" class="primary">保存</button></div>
+    </form>
+  </div>
   <!-- 奖励设置 -->
   <div id="archives-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="archives-title">
     <div class="modal-box archives-box">
@@ -358,7 +391,8 @@
     <div id="projector-board" class="projector-board"></div>
   </div>
 
-  <script src="/app.js?v=20261102a"></script>
+  <script src="/app.js?v=20261102b"></script>
+  <script src="/lessons.js?v=20261102b"></script>
   <script src="/archives.js?v=20261010d"></script>
 </body>
 </html>

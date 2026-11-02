@@ -6,6 +6,7 @@ import sqlite3
 import threading
 import time
 import uuid
+import sys
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 
@@ -14,6 +15,9 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+from lessons import init_lessons, assign_new_scores, touch_lesson_records, register_lesson_routes
 DB_DIR = os.path.join(BASE_DIR, "data")
 # 本地测试可以指向另一个库文件，线上不设这个变量就还是原来的位置
 DB_PATH = os.environ.get("JIAFEN_DB_PATH") or os.path.join(DB_DIR, "jiafen.db")
@@ -389,6 +393,7 @@ def init_db():
         record_reward_milestones(conn, row[0])
     init_archive_history(conn)
     init_monthly_scores(conn)
+    init_lessons(conn)
     conn.commit()
     conn.close()
 
@@ -1167,12 +1172,13 @@ def add_score():
     if not owned:
         return jsonify({"error": "小组不存在"}), 404
     db = get_db()
-    db.execute(
+    score_cursor = db.execute(
         "INSERT INTO transactions(group_id, class_id, delta, reason, created_at) VALUES(?,?,?,?,?)",
         (gid, owned["id"], delta, reason, beijing_now().strftime("%Y-%m-%d %H:%M:%S")),
     )
     db.execute("UPDATE groups SET score = score + ? WHERE id=?", (delta, gid))
     record_reward_milestones(db, gid)
+    assign_new_scores(db, [score_cursor.lastrowid])
     db.commit()
     new_score = db.execute("SELECT score FROM groups WHERE id=?", (gid,)).fetchone()["score"]
     broadcast(
@@ -1219,6 +1225,7 @@ def add_class_score(cid):
     db.execute("UPDATE groups SET score = score + ? WHERE class_id=?", (delta, cid))
     for gr in groups:
         record_reward_milestones(db, gr["id"])
+    assign_new_scores(db, [r[0] for r in db.execute("SELECT id FROM transactions WHERE batch_id=?", (batch_id,))])
     db.commit()
     rows = db.execute("SELECT id, score FROM groups WHERE class_id=?", (cid,)).fetchall()
     scores = [{"id": r["id"], "score": r["score"]} for r in rows]
@@ -1273,6 +1280,7 @@ def undo():
             "UPDATE monthly_score_entries SET voided_at=? WHERE transaction_id=? AND owner_id=?",
             [(beijing_now().strftime("%Y-%m-%d %H:%M:%S"), r["id"], u["id"]) for r in rows],
         )
+        touch_lesson_records(db, [r["id"] for r in rows])
         db.execute("DELETE FROM transactions WHERE batch_id=?", (t["batch_id"],))
         db.commit()
         scores = _group_scores(db, [r["group_id"] for r in rows])
@@ -1293,6 +1301,7 @@ def undo():
         "UPDATE monthly_score_entries SET voided_at=? WHERE transaction_id=? AND owner_id=?",
         (beijing_now().strftime("%Y-%m-%d %H:%M:%S"), t["id"], u["id"]),
     )
+    touch_lesson_records(db, [t["id"]])
     db.execute("DELETE FROM transactions WHERE id=?", (t["id"],))
     db.commit()
     scores = _group_scores(db, [t["group_id"]])
@@ -1755,6 +1764,8 @@ def import_data():
 def index():
     return send_from_directory(app.static_folder, "index.html")
 
+
+register_lesson_routes(app, get_db, current_user, login_required, own_class, broadcast)
 
 if __name__ == "__main__":
     init_db()
