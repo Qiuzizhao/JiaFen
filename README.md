@@ -52,6 +52,8 @@
 
 ## 技术栈
 
+Windows 悬浮窗试用版见 [desktop/README.md](desktop/README.md)，支持快捷记分、排行榜、托盘常驻及手机操作触发电脑播报。
+
 - 后端：Python + Flask，SQLite 存储
 - 前端：原生 HTML / CSS / JS 单页应用
 - 实时：Server-Sent Events（SSE）

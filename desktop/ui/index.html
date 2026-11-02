@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>加分助手</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header id="chrome">
+    <span class="brand" aria-hidden="true">加</span><span id="window-title">加分助手</span>
+    <div class="class-bar"><select id="class-select" aria-label="当前班级"></select><button id="sync" class="sync" title="重新核对服务器数据">连接中</button></div>
+    <span class="drag-space"></span>
+    <button id="pin" class="icon" aria-label="取消置顶" title="置顶开关"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m16 3 5 5-4 2-2 5-2 2-6-6 2-2 5-2Z"/><path d="m9 15-6 6"/></svg></button>
+    <button id="collapse" class="icon" title="收起为悬浮条" aria-label="收起"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg></button>
+    <button id="hide" class="icon" title="隐藏到托盘，继续播报" aria-label="隐藏到托盘"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+  </header>
+  <div id="compact-bar" hidden><button id="expand"><span id="compact-name">加分助手</span><small id="compact-status">连接中</small><span>展开 ↗</span></button></div>
+  <main id="full-panel">
+    <form id="login" hidden>
+      <div class="welcome"><h1>课堂的快捷入口</h1></div>
+      <input id="server" type="hidden" value="https://jiafen.qiuzizhao.com">
+      <label>用户名<input id="username" autocomplete="username" required maxlength="100"></label>
+      <label>密码<input id="password" type="password" autocomplete="current-password" required maxlength="256"></label>
+      <button id="login-submit" class="primary" type="submit">登录并同步</button>
+      <p class="hint">登录状态保存在这台电脑。Ctrl + Alt + J 随时显示或隐藏。</p>
+    </form>
+    <section id="workspace" hidden>
+      <nav aria-label="面板视图"><button data-tab="score" class="active">记分</button><button data-tab="rank">排行榜</button><button data-tab="voice">播报</button></nav>
+      <div class="scroll-area">
+        <section id="score-panel"><div id="groups"></div><p id="empty" class="hint" hidden>还没有班级或小组，请先在网页端创建。</p></section>
+        <section id="rank-panel" hidden><div class="segments" aria-label="排名范围"><button data-scope="class" class="active">全班</button><button data-scope="school">全校</button><button data-scope="classes">班级</button></div><div id="ranking"></div></section>
+        <section id="voice-panel" hidden>
+          <label class="voice-scope"><span>播报范围</span><select id="voice-mode"><option value="all">本班全部操作（含手机）</option><option value="local">仅本机操作</option><option value="off">静音</option></select></label>
+          <div class="voice-info"><span class="small">接收班级</span><strong id="voice-class">未选择</strong></div>
+          <div class="two-buttons"><button id="test-voice">试听语音</button><button id="stop-voice">停止播报</button></div>
+          <p class="hint" title="同账号手机操作实时同步；需安装 Windows 中文语音包。电脑休眠或彻底退出后停止接收。">本地中文语音 · 收起后继续播报</p>
+          <div class="account"><span id="account-name"></span><button id="logout">退出登录</button></div>
+        </section>
+      </div>
+      <form id="custom" hidden><label>操作对象<select id="custom-target" aria-label="自定义记分对象"></select></label><div class="custom-row"><input id="custom-delta" type="number" step="1" min="-1000" max="1000" value="2" required aria-label="分值，负数为扣分"><button class="primary" type="submit">记分</button><button id="close-custom" type="button">取消</button></div></form>
+      <div id="undo-confirm" hidden><p id="undo-description"></p><div class="two-buttons"><button id="do-undo" class="danger">确认撤销</button><button id="cancel-undo">取消</button></div></div>
+      <footer><button id="all-plus">全班 +1</button><button id="open-custom">自定义</button><button id="undo" title="撤销账号下最近一次操作，可能来自手机">↶ 撤销</button></footer>
+      <div class="voice-strip"><span id="voice-label">当前班级播报</span><button id="mute">静音</button></div>
+      <div class="last-action"><span class="small">播报动态</span><span id="announcement" aria-live="polite">等待加减分</span></div>
+    </section>
+    <div id="notice" role="status" hidden></div><button id="retry" hidden>重试连接</button>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

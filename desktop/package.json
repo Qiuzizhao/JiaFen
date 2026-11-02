@@ -1,0 +1,24 @@
+{
+  "name": "jiafen-desktop",
+  "version": "0.1.9",
+  "description": "课堂积分桌面悬浮助手",
+  "author": "JiaFen",
+  "private": true,
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/*.test.cjs",
+    "pack": "electron-builder --win --dir",
+    "dist": "electron-builder --win portable"
+  },
+  "devDependencies": { "electron": "45.1.0", "electron-builder": "26.18.0" },
+  "build": {
+    "appId": "com.qiuzizhao.jiafen.desktop",
+    "productName": "加分助手",
+    "directories": { "output": "dist" },
+    "files": ["*.cjs", "*.ps1", "ui/**/*"],
+    "asarUnpack": ["voice.ps1"],
+    "win": { "target": "portable", "signAndEditExecutable": false },
+    "portable": { "artifactName": "JiaFen-Desktop-${version}.exe" }
+  }
+}
