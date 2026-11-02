@@ -219,5 +219,28 @@ class LessonTests(unittest.TestCase):
         self.assertEqual(r.status_code,400,r.json)
         self.assertEqual(before,self.originals())
 
+    def test_deployment_during_current_class_resumes_window(self):
+        from datetime import timedelta
+        import lessons
+        real_now = lessons.datetime.now(lessons.BJ).replace(tzinfo=None)
+        first = (real_now-timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")
+        last = (real_now-timedelta(minutes=5)).strftime("%Y-%m-%d %H:%M:%S")
+        # Stay on one Beijing day to exercise the active-day migration branch.
+        if first[:10] != real_now.strftime("%Y-%m-%d"):
+            self.skipTest("near midnight")
+        self.score(first,1); self.score(last,2)
+        with sqlite3.connect(m.DB_PATH) as db:
+            db.execute("DELETE FROM lesson_entries");db.execute("DELETE FROM lesson_revisions");db.execute("DELETE FROM lessons")
+            db.execute("UPDATE lesson_settings SET history_seeded=0")
+        before = self.originals();m.init_db()
+        rows = self.lessons(real_now.strftime("%Y-%m"))["lessons"]
+        self.assertEqual(len(rows),1)
+        self.assertEqual(rows[0]["source"],"automatic")
+        self.assertEqual(rows[0]["status"],"recognized")
+        expected = (datetime.fromisoformat(first)+timedelta(minutes=120)).strftime("%Y-%m-%d %H:%M:%S")
+        self.assertEqual(rows[0]["end_at"],expected)
+        self.assertEqual(rows[0]["summary"]["net"],3)
+        self.assertEqual(before,self.originals())
+
 
 if __name__ == "__main__": unittest.main()

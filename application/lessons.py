@@ -57,6 +57,39 @@ def init_lessons(db):
         if not db.execute("SELECT history_seeded FROM lesson_settings WHERE owner_id=?", (uid,)).fetchone()[0]:
             seed_history(db, uid)
             db.execute("UPDATE lesson_settings SET history_seeded=1 WHERE owner_id=?", (uid,))
+    resume_current_windows(db)
+
+
+def resume_current_windows(db):
+    """A release during a live class must not split it at the last pre-release click."""
+    now = datetime.now(BJ).replace(tzinfo=None)
+    rows = db.execute(
+        "SELECT * FROM lessons WHERE archived_at IS NULL AND source='historical' AND status='review' AND start_at>=?",
+        (now.strftime("%Y-%m-%d 00:00:00"),)).fetchall()
+    for row in rows:
+        last = db.execute("SELECT MAX(m.occurred_at) FROM monthly_score_entries m JOIN lesson_entries le ON le.entry_id=m.id WHERE le.lesson_id=? AND m.voided_at IS NULL",
+                          (row["id"],)).fetchone()[0]
+        if not last or not 0 <= (now-datetime.fromisoformat(last)).total_seconds() <= 1800:
+            continue
+        minutes = db.execute("SELECT window_minutes FROM lesson_settings WHERE owner_id=?", (row["owner_id"],)).fetchone()[0]
+        end = (datetime.fromisoformat(row["start_at"])+timedelta(minutes=minutes)).strftime("%Y-%m-%d %H:%M:%S")
+        if now >= datetime.fromisoformat(end):
+            continue
+        conflicts = db.execute(
+            "SELECT * FROM lessons WHERE owner_id=? AND class_id=? AND id<>? AND archived_at IS NULL AND start_at<? AND end_at>?",
+            (row["owner_id"],row["class_id"],row["id"],end,row["start_at"])).fetchall()
+        # Never override a manually reviewed/edited boundary.
+        if any(c["source"] != "automatic" or c["start_at"] < row["end_at"] for c in conflicts):
+            continue
+        before = dict(row)
+        for child in conflicts:
+            audit(db,child["id"],row["owner_id"],"resume_live_window_merge",dict(child),{"continued_in":row["id"]})
+            db.execute("UPDATE lessons SET archived_at=?,revision=revision+1 WHERE id=?", (now_stamp(),child["id"]))
+            db.execute("DELETE FROM lesson_entries WHERE lesson_id=?", (child["id"],))
+        apply_window(db,row["id"],row["owner_id"],row["class_id"],row["start_at"],end)
+        db.execute("UPDATE lessons SET end_at=?,status='recognized',source='automatic',note=?,revision=revision+1 WHERE id=?",
+                   (end,"升级时延续正在进行的课堂窗口",row["id"]))
+        audit(db,row["id"],row["owner_id"],"resume_live_window",before,{"end_at":end,"merged_automatic_windows":[c["id"] for c in conflicts]})
 
 
 def now_stamp():
