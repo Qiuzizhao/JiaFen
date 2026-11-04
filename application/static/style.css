@@ -883,7 +883,9 @@ html { -webkit-text-size-adjust: 100%; }
 .reward-tabs button:focus-visible, .reward-class-chip:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
 .reward-settings-trigger { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 40px; font-size: 13px; font-weight: 600; white-space: nowrap; }
 .reward-settings-trigger span { font-size: 17px; line-height: 1; }
-.reward-controls { display: flex; gap: 8px; }
+.reward-controls { display: flex; flex-wrap: wrap; gap: 8px; }
+.reward-monthly-switch { display: flex; align-items: center; gap: 8px; margin-bottom: 18px; font-size: 14px; cursor: pointer; }
+.reward-monthly-switch input { width: 17px; height: 17px; margin: 0; accent-color: var(--brand); }
 .archives-box { width: min(960px, 100%); height: min(760px, 86vh); display: flex; flex-direction: column; overflow: hidden; padding: 0; }
 .archives-box > .modal-head { flex: none; padding: 20px 24px; border-bottom: 1px solid var(--border, #e5e7eb); }
 .archives-box > .modal-head h3 { margin: 0; }

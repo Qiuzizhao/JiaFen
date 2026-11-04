@@ -19,6 +19,7 @@ if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 from lessons import init_lessons, assign_new_scores, touch_lesson_records, register_lesson_routes
 from averages import register_average_routes
+from monthly_rewards import init_monthly_rewards, monthly_settings, record_monthly_rewards, register_monthly_reward_routes, valid_month
 DB_DIR = os.path.join(BASE_DIR, "data")
 # 本地测试可以指向另一个库文件，线上不设这个变量就还是原来的位置
 DB_PATH = os.environ.get("JIAFEN_DB_PATH") or os.path.join(DB_DIR, "jiafen.db")
@@ -394,6 +395,7 @@ def init_db():
         record_reward_milestones(conn, row[0])
     init_archive_history(conn)
     init_monthly_scores(conn)
+    init_monthly_rewards(conn)
     init_lessons(conn)
     conn.commit()
     conn.close()
@@ -1180,6 +1182,7 @@ def add_score():
     db.execute("UPDATE groups SET score = score + ? WHERE id=?", (delta, gid))
     record_reward_milestones(db, gid)
     assign_new_scores(db, [score_cursor.lastrowid])
+    record_monthly_rewards(db, current_user()["id"], beijing_now(), [gid])
     db.commit()
     new_score = db.execute("SELECT score FROM groups WHERE id=?", (gid,)).fetchone()["score"]
     broadcast(
@@ -1228,6 +1231,7 @@ def add_class_score(cid):
     for gr in groups:
         record_reward_milestones(db, gr["id"])
     assign_new_scores(db, [r[0] for r in db.execute("SELECT id FROM transactions WHERE batch_id=?", (batch_id,))])
+    record_monthly_rewards(db, current_user()["id"], beijing_now(), [gr["id"] for gr in groups])
     db.commit()
     rows = db.execute("SELECT id, score FROM groups WHERE class_id=?", (cid,)).fetchall()
     scores = [{"id": r["id"], "score": r["score"]} for r in rows]
@@ -1293,6 +1297,7 @@ def undo(transaction_id=None):
         )
         touch_lesson_records(db, [r["id"] for r in rows])
         db.execute("DELETE FROM transactions WHERE batch_id=? AND class_id=?", (t["batch_id"], t["class_id"]))
+        record_monthly_rewards(db, u["id"], beijing_now(), [r["group_id"] for r in rows])
         db.commit()
         scores = _group_scores(db, [r["group_id"] for r in rows])
         broadcast({"kind": "undo", "client": client, "scores": scores})
@@ -1314,6 +1319,7 @@ def undo(transaction_id=None):
     )
     touch_lesson_records(db, [t["id"]])
     db.execute("DELETE FROM transactions WHERE id=?", (t["id"],))
+    record_monthly_rewards(db, u["id"], beijing_now(), [t["group_id"]])
     db.commit()
     scores = _group_scores(db, [t["group_id"]])
     broadcast({"kind": "undo", "client": client, "scores": scores})
@@ -1347,7 +1353,7 @@ def list_rewards():
         group_result = []
         for group in groups:
             opportunities = db.execute(
-                "SELECT id, kind, threshold, note, completed, created_at, completed_at "
+                "SELECT id, kind, threshold, note, monthly_period, completed, created_at, completed_at "
                 "FROM reward_opportunities WHERE group_id=? "
                 "ORDER BY CASE kind WHEN 'score' THEN 0 ELSE 1 END, threshold, id",
                 (group["id"],),
@@ -1360,7 +1366,8 @@ def list_rewards():
     locks = [row[0] for row in db.execute(
         "SELECT threshold FROM reward_locks WHERE owner_id=? ORDER BY threshold", (u["id"],)
     )]
-    return jsonify({"step": reward_step_for_user(db, u["id"]), "locked_thresholds": locks, "classes": result})
+    return jsonify({"step": reward_step_for_user(db, u["id"]), "locked_thresholds": locks,
+                    "monthly_goal": monthly_settings(db, u["id"]), "classes": result})
 
 
 @app.route("/api/rewards/locks/<int:threshold>", methods=["PUT"])
@@ -1642,7 +1649,7 @@ def export_data():
             ).fetchone()
             item["reward_max_score"] = int(progress["max_score"]) if progress else int(group["score"])
             item["reward_opportunities"] = [dict(row) for row in db.execute(
-                "SELECT kind, threshold, note, completed, created_at, completed_at "
+                "SELECT kind, threshold, note, monthly_period, completed, created_at, completed_at "
                 "FROM reward_opportunities WHERE group_id=? "
                 "ORDER BY CASE kind WHEN 'score' THEN 0 ELSE 1 END, threshold, id", (group["id"],)
             ).fetchall()]
@@ -1660,12 +1667,13 @@ def export_data():
                 "students": [dict(s) for s in students],
             }
         )
-    # version 5：增加账号的奖励锁定档位；旧版备份仍可导入。
+    # version 6：保留当月目标设置与每月发放标记；旧版备份仍可导入。
     return jsonify(
         {
-            "version": 5,
+            "version": 6,
             "exported_at": datetime.now().isoformat(),
             "reward_step": reward_step_for_user(db, u["id"]),
+            "monthly_reward_goal": monthly_settings(db, u["id"]),
             "reward_locked_thresholds": [row[0] for row in db.execute(
                 "SELECT threshold FROM reward_locks WHERE owner_id=? ORDER BY threshold", (u["id"],)
             )],
@@ -1687,6 +1695,16 @@ def import_data():
             return jsonify({"error": "备份中的奖励锁定设置无效"}), 400
         db.execute("DELETE FROM reward_locks WHERE owner_id=?", (u["id"],))
         db.executemany("INSERT OR IGNORE INTO reward_locks VALUES(?,?)", [(u["id"], v) for v in locks])
+    if "monthly_reward_goal" in data:
+        goal = data["monthly_reward_goal"]
+        if (not isinstance(goal, dict) or type(goal.get("enabled")) is not bool
+                or type(goal.get("target")) is not int or not 1 <= goal["target"] <= 10000
+                or (goal.get("start_month") is not None and not valid_month(goal["start_month"]))
+                or (goal["enabled"] and not goal.get("start_month"))):
+            return jsonify({"error": "备份中的当月目标设置无效"}), 400
+        db.execute('INSERT INTO monthly_reward_settings(owner_id,enabled,target,start_month) VALUES(?,?,?,?) '
+                   'ON CONFLICT(owner_id) DO UPDATE SET enabled=excluded.enabled,target=excluded.target,start_month=excluded.start_month',
+                   (u["id"], int(goal["enabled"]), goal["target"], goal.get("start_month")))
     try:
         backup_step = int(data.get("reward_step", 0))
     except (TypeError, ValueError):
@@ -1746,10 +1764,13 @@ def import_data():
                             continue
                         kind, note = "score", ""
                     completed = 1 if opportunity.get("completed") else 0
+                    month = opportunity.get("monthly_period")
+                    if month is not None and (kind != "manual" or not valid_month(month)):
+                        continue
                     db.execute(
                         "INSERT OR IGNORE INTO reward_opportunities "
-                        "(group_id, kind, threshold, note, completed, created_at, completed_at) VALUES(?,?,?,?,?,?,?)",
-                        (gcur.lastrowid, kind, threshold, note, completed,
+                        "(group_id, kind, threshold, note, monthly_period, completed, created_at, completed_at) VALUES(?,?,?,?,?,?,?,?)",
+                        (gcur.lastrowid, kind, threshold, note, month, completed,
                          opportunity.get("created_at") or datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                          opportunity.get("completed_at") if completed else None),
                     )
@@ -1778,6 +1799,7 @@ def index():
 
 register_lesson_routes(app, get_db, current_user, login_required, own_class, broadcast)
 register_average_routes(app, get_db, current_user, login_required, lambda: beijing_now())
+register_monthly_reward_routes(app, get_db, current_user, login_required, lambda: beijing_now(), broadcast)
 
 if __name__ == "__main__":
     init_db()

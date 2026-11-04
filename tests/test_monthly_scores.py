@@ -6,6 +6,7 @@ import sqlite3
 import tempfile
 import unittest
 from datetime import datetime, timezone, timedelta
+from contextlib import contextmanager
 
 spec = importlib.util.spec_from_file_location("jiafen_monthly_test", Path(__file__).resolve().parents[1] / "application/app.py")
 m = importlib.util.module_from_spec(spec)
@@ -34,6 +35,15 @@ class MonthlyScoresTests(unittest.TestCase):
         stamp = datetime.fromisoformat(value).astimezone(BJ)
         m.beijing_now = lambda: stamp
 
+    @contextmanager
+    def database(self):
+        db = sqlite3.connect(m.DB_PATH)
+        try:
+            with db:
+                yield db
+        finally:
+            db.close()
+
     def score(self, delta, gid=None):
         response = self.client.post("/api/score", json={"group_id": gid or self.gids[0], "delta": delta})
         self.assertEqual(response.status_code, 200)
@@ -45,7 +55,7 @@ class MonthlyScoresTests(unittest.TestCase):
         return {r["group_id"]: r["score"] for r in response.json["scores"]}
 
     def snapshot(self):
-        with sqlite3.connect(m.DB_PATH) as db:
+        with self.database() as db:
             tables = ["users", "classes", "groups", "transactions", "students", "reward_settings",
                       "reward_progress", "reward_opportunities", "reward_locks", "ranking_history_bounds",
                       "ranking_class_history", "ranking_group_history", "ranking_archives", "meta"]
@@ -77,7 +87,7 @@ class MonthlyScoresTests(unittest.TestCase):
         self.assertEqual(self.monthly("2026-10")[self.gids[0]], 0)
         self.assertEqual(self.monthly("2026-11")[self.gids[0]], 0)
         self.assertEqual(self.client.get("/api/classes").json[0]["groups"][0]["score"], 0)
-        with sqlite3.connect(m.DB_PATH) as db:
+        with self.database() as db:
             self.assertIsNotNone(db.execute("SELECT voided_at FROM monthly_score_entries").fetchone()[0])
 
     def test_batch_uses_one_timestamp_and_undo_voids_whole_batch(self):
@@ -85,7 +95,7 @@ class MonthlyScoresTests(unittest.TestCase):
         response = self.client.post(f"/api/classes/{self.cid}/score", json={"delta": 3})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(list(self.monthly("2026-10").values()), [3, 3])
-        with sqlite3.connect(m.DB_PATH) as db:
+        with self.database() as db:
             self.assertEqual(db.execute("SELECT COUNT(DISTINCT occurred_at) FROM monthly_score_entries").fetchone()[0], 1)
         self.at("2026-11-01T00:00:00+08:00")
         self.client.post("/api/undo", json={})
@@ -110,7 +120,7 @@ class MonthlyScoresTests(unittest.TestCase):
         self.score(12)
         self.client.post("/api/rewards/groups/%s/opportunities" % self.gids[0], json={"note": "赠送"})
         # Make a pre-monthly schema with real legacy entries, preserving original tables.
-        with sqlite3.connect(m.DB_PATH) as db:
+        with self.database() as db:
             db.execute("DROP TRIGGER monthly_transaction_insert")
             db.execute("DROP TABLE monthly_score_entries")
             db.row_factory = sqlite3.Row
@@ -146,7 +156,7 @@ class MonthlyScoresTests(unittest.TestCase):
         stream.close()
 
     def test_owner_isolation_validation_and_empty_month(self):
-        with sqlite3.connect(m.DB_PATH) as db:
+        with self.database() as db:
             db.execute("INSERT INTO users(username,password_hash) VALUES('other',?)", (m.hash_password("fixture"),))
         other = m.app.test_client()
         with other.session_transaction() as session: session["uid"] = 2

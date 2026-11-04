@@ -78,6 +78,43 @@ function findClassOfGroup(gid) {
   return null;
 }
 
+let monthlyGoalBusy = false;
+function openMonthlyGoal() {
+  if (!state.rewardData) return;
+  const goal = state.rewardData.monthly_goal || { enabled: false, target: 10 };
+  $('#reward-monthly-enabled').checked = goal.enabled;
+  $('#reward-monthly-target').value = goal.target;
+  $('#reward-monthly-target').disabled = !goal.enabled;
+  $('#reward-monthly-error').textContent = '';
+  $('#reward-monthly-modal').classList.remove('hidden');
+  $('#reward-monthly-enabled').focus();
+}
+function closeMonthlyGoal() {
+  if (monthlyGoalBusy) return;
+  $('#reward-monthly-modal').classList.add('hidden');
+  $('#reward-monthly-open').focus();
+}
+async function saveMonthlyGoal(e) {
+  e.preventDefault();
+  if (monthlyGoalBusy) return;
+  const enabled = $('#reward-monthly-enabled').checked;
+  const target = Number($('#reward-monthly-target').value);
+  if (!Number.isInteger(target) || target < 1 || target > 10000) {
+    $('#reward-monthly-error').textContent = '请输入 1 到 10000 之间的整数';
+    return;
+  }
+  monthlyGoalBusy = true;
+  $('#reward-monthly-save').disabled = true;
+  $('#reward-monthly-error').textContent = '';
+  try {
+    await api('/api/rewards/monthly-goal', { method: 'PUT', body: { enabled, target, client: CLIENT_ID } });
+    await refreshRewards();
+    monthlyGoalBusy = false;
+    closeMonthlyGoal();
+  } catch (err) { $('#reward-monthly-error').textContent = err.message; }
+  finally { monthlyGoalBusy = false; $('#reward-monthly-save').disabled = false; }
+}
+
 function openRewardSettings() {
   if (!state.rewardData) return;
   $('#reward-step').value = state.rewardData.step;
@@ -292,9 +329,9 @@ function rewardGroupHTML(group, className = '') {
       const manual = o.kind === 'manual';
       const source = manual ? o.note : `${o.threshold} 分`;
       const label = `${source}${manual ? '' : '奖励机会'}，${done ? '已完成，点击确认恢复' : '待奖励，点击确认完成'}`;
-      return `<button class="reward-token ${manual ? 'manual' : ''} ${done ? 'completed' : 'available'}" data-opportunity="${o.id}" title="${esc(label)}" aria-label="${esc(label)}" aria-pressed="${done}">
+      return `<button class="reward-token ${manual ? 'manual' : ''} ${done ? 'completed' : 'available'}" data-opportunity="${o.id}" ${o.monthly_period ? `data-monthly-period="${esc(o.monthly_period)}"` : ''} title="${esc(label)}" aria-label="${esc(label)}" aria-pressed="${done}">
         <span class="reward-token-disc" aria-hidden="true">✦</span>
-        <span class="reward-token-threshold">${esc(source)}</span>
+        <span class="reward-token-threshold">${esc(o.monthly_period ? Number(o.monthly_period.slice(5)) + '月达标' : source)}</span>
       </button>`;
     }).join('');
   return `<article class="reward-card${className ? ' has-class' : ''}" style="--group-color:${esc(group.color)}">
@@ -3087,6 +3124,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (state.rewardLockPending) saveRewardLock(state.rewardLockPending.threshold, true);
   });
   $('#reward-settings-open').addEventListener('click', openRewardSettings);
+  $('#reward-monthly-open').addEventListener('click', openMonthlyGoal);
+  $('#reward-monthly-close').addEventListener('click', closeMonthlyGoal);
+  $('#reward-monthly-cancel').addEventListener('click', closeMonthlyGoal);
+  $('#reward-monthly-form').addEventListener('submit', saveMonthlyGoal);
+  $('#reward-monthly-enabled').addEventListener('change', e => { $('#reward-monthly-target').disabled = !e.target.checked; });
+  $('#reward-monthly-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeMonthlyGoal(); });
   $('#reward-settings-close').addEventListener('click', () => closeRewardSettings());
   $('#reward-settings-cancel').addEventListener('click', () => closeRewardSettings());
   $('#reward-settings-modal').addEventListener('click', e => {
@@ -3103,6 +3146,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.target === e.currentTarget) closeRewardAdd();
   });
   document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && !$('#reward-monthly-modal').classList.contains('hidden')) { closeMonthlyGoal(); return; }
     if (e.key === 'Escape' && !$('#reward-lock-confirm').classList.contains('hidden')) {
       if (!state.rewardLockBusy) closeRewardLockConfirm();
       return;
