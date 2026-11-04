@@ -173,8 +173,7 @@ input.masked { -webkit-text-security: disc; }
 }
 @media (max-width: 1100px) {
   .layout { grid-template-columns: 220px 1fr; }
-  .right { grid-column: 1 / -1; flex-direction: row; }
-  .right .panel { flex: 1 1 0; min-width: 0; }
+  .right { grid-column: 1 / -1; }
 }
 /* 移动端班级切换下拉（桌面端隐藏）；在 720px 媒体查询中显示 */
 .mobile-class-select { display: none; }
@@ -192,6 +191,10 @@ input.masked { -webkit-text-security: disc; }
   flex-direction: column;
   gap: 16px;
   min-width: 0;
+}
+@media (min-width: 721px) and (max-width: 1100px) {
+  .right { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .right .panel { min-width: 0; }
 }
 
 .sidebar, .right .panel, .main {
