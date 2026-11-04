@@ -211,7 +211,8 @@ input.masked { -webkit-text-security: disc; }
   display: flex; align-items: center; gap: 8px;
 }
 .new-class { display: flex; gap: 8px; }
-.new-class input { flex: 1; }
+.new-class input { flex: 1 1 0; min-width: 0; width: 100%; }
+.new-class #btn-add-class { flex: 0 0 40px; padding: 0; min-height: 40px; font-size: 20px; }
 
 /* 班级列表 */
 .class-list { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
