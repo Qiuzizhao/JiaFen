@@ -467,6 +467,14 @@ body.modal-open { overflow: hidden; }
   width: min(380px, 100%);
 }
 .modal-box h3 { margin: 0 0 10px; font-size: 18px; }
+.site-settings-box .modal-head h3 { margin: 0; }
+.site-settings-box form > label { display: block; margin: 24px 0 10px; font-size: 14px; font-weight: 600; }
+.site-settings-date { display: flex; gap: 8px; margin-bottom: 12px; }
+.site-settings-date input { flex: 1; min-width: 0; width: 100%; font-size: 16px; }
+.site-settings-date button { flex: none; }
+.site-settings-box .err:empty { display: none; }
+.site-settings-box .small { font-size: 12px; }
+.site-settings-box .modal-actions { margin-top: 20px; }
 .modal-box p { margin: 0 0 12px; color: var(--muted); font-size: 14px; line-height: 1.5; }
 .modal-box input[type="password"] { width: 100%; margin: 6px 0 10px; }
 .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 8px; }

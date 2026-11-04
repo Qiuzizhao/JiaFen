@@ -65,6 +65,77 @@ class AverageTests(unittest.TestCase):
     def by_group(self, result, gid):
         return next(g for g in result["groups"] if g["group_id"]==gid)
 
+    def set_start_date(self, value):
+        response = self.c.put('/api/settings', json={'average_start_date': value})
+        self.assertEqual(response.status_code, 200, response.json)
+        return response.json
+
+    def test_start_date_filters_both_scores_and_lesson_counts(self):
+        self.fixture()
+        self.assertEqual(self.c.get('/api/settings').json, {'average_start_date': None})
+        self.set_start_date('2026-09-02')
+        a = self.result(self.a)
+        self.assertEqual((a['lesson_count'], a['period_net_score'], a['average']), (3, 17, 5.67))
+        self.assertEqual(self.by_group(a, self.ag[0])['average'], 2)
+        self.assertEqual(a['effective_start_at'], '2026-09-02 00:00:00')
+        history = self.result(self.a, period='history')
+        self.assertEqual((history['lesson_count'], history['period_net_score']), (3, 17))
+        b = self.result(self.b)
+        self.assertEqual((b['lesson_count'], b['period_net_score']), (4, 8))
+        self.set_start_date(None)
+        self.assertEqual(self.result(self.a)['average'], 7.5)
+
+    def test_month_intersection_and_future_cutoff(self):
+        self.fixture()
+        self.set_start_date('2026-10-01')
+        a = self.result(self.a)
+        self.assertEqual((a['lesson_count'], a['period_net_score'], a['average']), (0, 0, None))
+        self.lesson(self.a, '2026-10-10')
+        self.score(self.ag[0], '2026-10-10 08:10:00', 4)
+        self.at('2026-11-03 18:00:00')
+        a = self.result(self.a, month='2026-10')
+        self.assertEqual((a['lesson_count'], a['period_net_score'], a['average']), (1, 4, 4))
+        self.assertEqual(self.result(self.a, period='history')['average'], 4)
+        self.set_start_date('2026-11-04')
+        future = self.result(self.a, period='history')
+        self.assertEqual(future['lesson_count'], 0)
+        self.assertIn('period_not_started', future['quality']['warnings'])
+
+    def test_cutoff_excludes_whole_previous_day_lesson_and_pending_history(self):
+        self.lesson(self.a, '2026-09-01', begin='23:30:00', end='23:59:59')
+        self.score(self.ag[0], '2026-09-01 23:40:00', 5)
+        # A recognized lesson crosses midnight; the entire lesson predates the selected day.
+        with self.database() as db:
+            db.execute("UPDATE lessons SET end_at='2026-09-02 00:30:00' WHERE class_id=?", (self.a,))
+        self.score(self.ag[0], '2026-09-02 00:10:00', 7)
+        self.lesson(self.a, '2026-09-02')
+        self.score(self.ag[0], '2026-09-02 08:10:00', 10)
+        self.at('2026-11-03 18:00:00')
+        self.set_start_date('2026-09-02')
+        a = self.result(self.a)
+        self.assertTrue(a['quality']['can_compute'], a['quality'])
+        self.assertEqual((a['period_net_score'], a['lesson_count'], a['average']), (10, 1, 10))
+
+    def test_settings_isolation_validation_backup_and_readonly(self):
+        with self.database() as db:
+            uid = db.execute("INSERT INTO users(username,display_name,password_hash) VALUES('other','Other','unused')").lastrowid
+        other = m.app.test_client()
+        with other.session_transaction() as s: s['uid'] = uid
+        self.set_start_date('2026-11-01')
+        self.assertIsNone(other.get('/api/settings').json['average_start_date'])
+        self.assertEqual(m.app.test_client().get('/api/settings').status_code, 401)
+        for value in ['2026-02-30', '2026-2-01', '1899-12-31', '9999-01-01', True, 123, [], {}]:
+            self.assertEqual(self.c.put('/api/settings', json={'average_start_date': value}).status_code, 400)
+        self.assertEqual(self.c.put('/api/settings', json={}).status_code, 400)
+        backup = self.c.get('/api/export').json
+        self.set_start_date(None)
+        self.assertEqual(self.c.post('/api/import', json=backup).status_code, 200)
+        self.assertEqual(self.c.get('/api/settings').json['average_start_date'], '2026-11-01')
+        m.init_db()
+        before = self.snapshot()
+        self.result(period='history'); self.c.get('/api/settings')
+        self.assertEqual(before, self.snapshot())
+
     @contextmanager
     def database(self):
         db=sqlite3.connect(m.DB_PATH)

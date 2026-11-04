@@ -78,6 +78,57 @@ function findClassOfGroup(gid) {
   return null;
 }
 
+let siteSettingsBusy = false;
+let siteSettingsRequest = 0;
+async function openSiteSettings() {
+  closeBackupMenu();
+  const version = ++siteSettingsRequest;
+  $('#site-settings-error').textContent = '';
+  $('#average-start-date').value = '';
+  $('#average-start-date').disabled = true;
+  $('#average-start-clear').disabled = true;
+  $('#site-settings-save').disabled = true;
+  $('#site-settings-modal').classList.remove('hidden');
+  $('#site-settings-close').focus();
+  try {
+    const data = await api('/api/settings');
+    if (version !== siteSettingsRequest) return;
+    $('#average-start-date').value = data.average_start_date || '';
+    $('#average-start-date').disabled = false;
+    $('#average-start-clear').disabled = false;
+    $('#site-settings-save').disabled = false;
+    $('#average-start-date').focus();
+  } catch (err) { if (version === siteSettingsRequest) $('#site-settings-error').textContent = err.message; }
+}
+function closeSiteSettings() {
+  if (siteSettingsBusy) return;
+  siteSettingsRequest++;
+  $('#site-settings-modal').classList.add('hidden');
+  $('#btn-settings').focus();
+}
+function invalidateAverageSettings() {
+  averageRequest++;
+  averageLeaderboard = null;
+  if (state.leaderboardMetric === 'average') renderLeaderboard();
+  scheduleMonthlyLeaderboardRefresh();
+}
+async function saveSiteSettings(e) {
+  e.preventDefault();
+  if (siteSettingsBusy || $('#site-settings-save').disabled) return;
+  siteSettingsBusy = true;
+  $('#site-settings-save').disabled = true;
+  $('#site-settings-error').textContent = '';
+  const version = siteSettingsRequest;
+  try {
+    await api('/api/settings', { method: 'PUT', body: { average_start_date: $('#average-start-date').value || null, client: CLIENT_ID } });
+    if (version !== siteSettingsRequest) return;
+    invalidateAverageSettings();
+    siteSettingsBusy = false;
+    closeSiteSettings();
+  } catch (err) { if (version === siteSettingsRequest) $('#site-settings-error').textContent = err.message; }
+  finally { siteSettingsBusy = false; $('#site-settings-save').disabled = false; }
+}
+
 let monthlyGoalBusy = false;
 let monthlyGoalMonths = new Set();
 function renderMonthlyGoalMonths() {
@@ -504,6 +555,8 @@ async function api(path, opts = {}) {
 }
 
 function showLogin() {
+  siteSettingsRequest++;
+  $('#site-settings-modal').classList.add('hidden');
   averageRequest++;
   averageLeaderboard = null;
   startupCheckingEnabled = false;
@@ -1533,6 +1586,7 @@ async function syncClassRoster(cid) {
 
 // 其它设备的改动：能局部更新就局部更新，只有结构性变化才整页重新拉取
 function handleRemoteUpdate(data) {
+  if (data.kind === 'settings') { invalidateAverageSettings(); return; }
   if (typeof document !== 'undefined') document.dispatchEvent(new CustomEvent('jiafen:lessons', { detail: data }));
   if (typeof scheduleMonthlyLeaderboardRefresh === 'function') scheduleMonthlyLeaderboardRefresh();
   if (data.kind === 'lessons') return;
@@ -3150,6 +3204,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (state.rewardLockPending) saveRewardLock(state.rewardLockPending.threshold, true);
   });
   $('#reward-settings-open').addEventListener('click', openRewardSettings);
+  $('#btn-settings').addEventListener('click', openSiteSettings);
+  $('#site-settings-close').addEventListener('click', closeSiteSettings);
+  $('#site-settings-cancel').addEventListener('click', closeSiteSettings);
+  $('#site-settings-form').addEventListener('submit', saveSiteSettings);
+  $('#average-start-clear').addEventListener('click', () => { $('#average-start-date').value = ''; });
+  $('#site-settings-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeSiteSettings(); });
   $('#reward-monthly-open').addEventListener('click', openMonthlyGoal);
   $('#reward-monthly-close').addEventListener('click', closeMonthlyGoal);
   $('#reward-monthly-cancel').addEventListener('click', closeMonthlyGoal);
@@ -3179,6 +3239,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.target === e.currentTarget) closeRewardAdd();
   });
   document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && !$('#site-settings-modal').classList.contains('hidden')) { closeSiteSettings(); return; }
     if (e.key === 'Escape' && !$('#reward-monthly-modal').classList.contains('hidden')) { closeMonthlyGoal(); return; }
     if (e.key === 'Escape' && !$('#reward-lock-confirm').classList.contains('hidden')) {
       if (!state.rewardLockBusy) closeRewardLockConfirm();

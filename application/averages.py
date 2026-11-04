@@ -4,9 +4,10 @@ import json
 import re
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
+from app_settings import account_settings
 
 BJ = timezone(timedelta(hours=8))
-VERSION = "JF004-v1"
+VERSION = "JF004-v2"
 
 
 def average(net, count):
@@ -34,8 +35,11 @@ def period_bounds(period, month, now):
     return start, min(end, cutoff), month
 
 
-def calculate_class(db, uid, cls, period, month, now):
+def calculate_class(db, uid, cls, period, month, now, start_date=None):
     start, end, month = period_bounds(period, month, now)
+    configured_start = start_date + ' 00:00:00' if start_date else None
+    if configured_start:
+        start = max(start or configured_start, configured_start)
     lower = start or "0001-01-01 00:00:00"
     cid = cls["id"]
     roster = [dict(r) for r in db.execute(
@@ -46,7 +50,8 @@ def calculate_class(db, uid, cls, period, month, now):
         "FROM monthly_score_entries m LEFT JOIN lesson_entries le ON le.entry_id=m.id "
         "LEFT JOIN lessons l ON l.id=le.lesson_id AND l.owner_id=m.owner_id AND l.class_id=m.class_id "
         "WHERE m.owner_id=? AND m.class_id=? AND m.occurred_at>=? AND m.occurred_at<? "
-        "ORDER BY m.occurred_at,m.id", (uid, cid, lower, end))]
+        + ("AND (l.start_at IS NULL OR l.start_at>=?) " if configured_start else "") +
+        "ORDER BY m.occurred_at,m.id", (uid, cid, lower, end) + ((configured_start,) if configured_start else ()))]
     lessons = [dict(r) for r in db.execute(
         "SELECT l.*,(SELECT COUNT(*) FROM lesson_entries le JOIN monthly_score_entries m ON m.id=le.entry_id "
         "WHERE le.lesson_id=l.id AND m.owner_id=l.owner_id AND m.class_id=l.class_id AND m.voided_at IS NULL) AS valid_count "
@@ -86,7 +91,8 @@ def calculate_class(db, uid, cls, period, month, now):
                            "lesson_id": lid if e["lesson_start"] else None})
     overlap_rows = [dict(r) for r in db.execute(
         "SELECT id,start_at,end_at FROM lessons WHERE owner_id=? AND class_id=? AND archived_at IS NULL "
-        "AND start_at<? AND end_at>? ORDER BY start_at,id", (uid, cid, end, lower))]
+        "AND start_at<? AND end_at>? " + ("AND start_at>=? " if configured_start else "") +
+        "ORDER BY start_at,id", (uid, cid, end, lower) + ((configured_start,) if configured_start else ()))]
     overlaps = []
     for i, a in enumerate(overlap_rows):
         for b in overlap_rows[i+1:]:
@@ -134,11 +140,12 @@ def calculate_class(db, uid, cls, period, month, now):
                               "lessons": per_lesson})
     period_net = sum(g["period_net_score"] for g in group_results)
     lesson_net = sum(g["recognized_net_score"] for g in group_results)
-    digest = hashlib.sha256(json.dumps({"owner_id": uid, "class_id": cid, "class_name": cls["name"], "period": period, "month": month, "roster": roster,
+    digest = hashlib.sha256(json.dumps({"owner_id": uid, "class_id": cid, "class_name": cls["name"], "period": period, "month": month, "roster": roster, "average_start_date": start_date,
                                         "entries": rows, "lessons": lessons, "ignored": discarded, "overlaps": overlaps},
                                        ensure_ascii=False, sort_keys=True).encode()).hexdigest()
     return {
         "class_id": cid, "name": cls["name"], "period": period, "month": month,
+        "average_start_date": start_date, "effective_start_at": start,
         "period_net_score": period_net, "recognized_net_score": lesson_net,
         "unresolved_net_score": period_net - lesson_net, "lesson_count": count,
         "average": None if blocked else average(period_net, count),
@@ -185,6 +192,7 @@ def register_average_routes(app, get_db, current_user, login_required, beijing_n
             return jsonify({"error": "统计周期、月份或编号无效"}), 400
         db, uid = get_db(), current_user()["id"]
         db.execute("BEGIN")
+        settings = account_settings(db, uid)
         if gid:
             group = db.execute("SELECT g.class_id FROM groups g JOIN classes c ON c.id=g.class_id WHERE g.id=? AND c.owner_id=?", (gid,uid)).fetchone()
             if not group:
@@ -196,12 +204,13 @@ def register_average_routes(app, get_db, current_user, login_required, beijing_n
                              (uid,cid) if cid else (uid,)).fetchall()
         if cid and not classes:
             return jsonify({"error": "班级不存在"}), 404
-        results = [calculate_class(db,uid,c,period,month,now) for c in classes]
+        results = [calculate_class(db,uid,c,period,month,now,settings['average_start_date']) for c in classes]
         if gid:
             for result in results:
                 result["class_group_count"] = len(result["groups"])
                 result["groups"] = [g for g in result["groups"] if g["group_id"] == gid]
         return jsonify({"calculation_version": VERSION, "timezone": "Asia/Shanghai",
+                        "average_start_date": settings['average_start_date'],
                         "as_of": now.astimezone(BJ).isoformat(), "period": period,
                         "month": (month or now.astimezone(BJ).strftime("%Y-%m")) if period == "month" else None,
                         "lesson_period_basis": "lesson_start_beijing_time",

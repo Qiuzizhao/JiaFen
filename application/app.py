@@ -19,6 +19,7 @@ if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 from lessons import init_lessons, assign_new_scores, touch_lesson_records, register_lesson_routes
 from averages import register_average_routes
+from app_settings import init_app_settings, account_settings, validate_settings, save_account_settings, register_settings_routes
 from monthly_rewards import init_monthly_rewards, monthly_settings, record_monthly_rewards, register_monthly_reward_routes, valid_month, valid_months
 DB_DIR = os.path.join(BASE_DIR, "data")
 # 本地测试可以指向另一个库文件，线上不设这个变量就还是原来的位置
@@ -396,6 +397,7 @@ def init_db():
     init_archive_history(conn)
     init_monthly_scores(conn)
     init_monthly_rewards(conn)
+    init_app_settings(conn)
     init_lessons(conn)
     conn.commit()
     conn.close()
@@ -1667,13 +1669,14 @@ def export_data():
                 "students": [dict(s) for s in students],
             }
         )
-    # version 7：保留当月目标的选定月份；旧版备份仍可导入。
+    # version 8：保留账号的网站设置；旧版备份仍可导入。
     return jsonify(
         {
-            "version": 7,
+            "version": 8,
             "exported_at": datetime.now().isoformat(),
             "reward_step": reward_step_for_user(db, u["id"]),
             "monthly_reward_goal": monthly_settings(db, u["id"]),
+            "app_settings": account_settings(db, u["id"]),
             "reward_locked_thresholds": [row[0] for row in db.execute(
                 "SELECT threshold FROM reward_locks WHERE owner_id=? ORDER BY threshold", (u["id"],)
             )],
@@ -1689,6 +1692,12 @@ def import_data():
     classes = data.get("classes", [])
     db = get_db()
     u = current_user()
+    if 'app_settings' in data:
+        try:
+            imported_settings = validate_settings(data['app_settings'])
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
+        save_account_settings(db, u['id'], imported_settings)
     if "reward_locked_thresholds" in data:
         locks = data["reward_locked_thresholds"]
         if not isinstance(locks, list) or any(type(v) is not int or not 1 <= v <= 2147483647 for v in locks):
@@ -1803,6 +1812,7 @@ def index():
 register_lesson_routes(app, get_db, current_user, login_required, own_class, broadcast)
 register_average_routes(app, get_db, current_user, login_required, lambda: beijing_now())
 register_monthly_reward_routes(app, get_db, current_user, login_required, lambda: beijing_now(), broadcast)
+register_settings_routes(app, get_db, current_user, login_required, broadcast)
 
 if __name__ == "__main__":
     init_db()

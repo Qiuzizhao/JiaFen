@@ -14,7 +14,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png?v=20260915">
   <link rel="icon" href="/favicon.ico?v=20260915" sizes="any">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=20260915">
-  <link rel="stylesheet" href="/style.css?v=20261104f">
+  <link rel="stylesheet" href="/style.css?v=20261104g">
 </head>
 <body>
 
@@ -48,6 +48,7 @@
         <button id="btn-rewards" class="ghost" aria-pressed="false">奖励</button>
         <button id="btn-lessons" class="ghost" type="button">课堂</button>
         <button id="btn-archives" class="ghost" type="button" aria-haspopup="dialog" aria-controls="archives-modal">归档</button>
+        <button id="btn-settings" class="ghost" type="button" aria-haspopup="dialog" aria-controls="site-settings-modal">设置</button>
         <button id="btn-classes" class="ghost">班级</button>
         <div class="backup-wrap">
           <button id="btn-backup" class="ghost" type="button" aria-expanded="false" aria-controls="backup-menu">备份 <span aria-hidden="true">▾</span></button>
@@ -253,6 +254,18 @@
       </div>
     </form>
   </div>
+  <div id="site-settings-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="site-settings-title">
+    <div class="modal-box site-settings-box">
+      <div class="modal-head"><h3 id="site-settings-title">设置</h3><button id="site-settings-close" class="icon-btn" type="button" aria-label="关闭">✕</button></div>
+      <form id="site-settings-form">
+        <label for="average-start-date">课均统计起始日期</label>
+        <div class="site-settings-date"><input id="average-start-date" type="date" min="1900-01-01" max="9998-12-31"><button id="average-start-clear" type="button" class="ghost">不限</button></div>
+        <p class="muted small">从所选日期当天开始统计课堂与积分，留空则统计全部日期。</p>
+        <p id="site-settings-error" class="err" role="alert"></p>
+        <div class="modal-actions"><button id="site-settings-cancel" class="ghost" type="button">取消</button><button id="site-settings-save" class="primary" type="submit">保存</button></div>
+      </form>
+    </div>
+  </div>
   <div id="reward-monthly-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="reward-monthly-title">
     <div class="modal-box reward-settings-box">
       <div class="modal-head"><h3 id="reward-monthly-title">当月目标</h3><button id="reward-monthly-close" class="icon-btn" type="button" aria-label="关闭">✕</button></div>
@@ -437,7 +450,7 @@
     <div id="projector-board" class="projector-board"></div>
   </div>
 
-  <script src="/app.js?v=20261104f"></script>
+  <script src="/app.js?v=20261104g"></script>
   <script src="/lessons.js?v=20261102i"></script>
   <script src="/archives.js?v=20261010d"></script>
 </body>
