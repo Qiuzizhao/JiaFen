@@ -582,10 +582,10 @@ function schoolRankMap() {
 const RANK_MEDALS = ['🥇', '🥈', '🥉'];
 function rankBadgeHTML(rk) {
   const medal = rk <= 3 ? `<span class="rk-medal">${RANK_MEDALS[rk - 1]}</span>` : '';
-  return `<div class="school-rank rk${Math.min(rk, 3)}" title="全校排名第 ${rk} 名">${medal}<span class="rk-num">#${rk}</span></div>`;
+  return `<div class="school-rank ${rk <= 3 ? 'rk' + rk : ''}" title="全校排名第 ${rk} 名">${medal}<span class="rk-num">全校 #${rk}</span></div>`;
 }
 
-// 分数变化后只原位刷新卡片右下角的全校排名角标，不重建整个看板
+// 分数变化后只原位刷新标题旁的全校排名，不重建整个看板。
 function updateSchoolRanks() {
   const ranks = schoolRankMap();
   document.querySelectorAll('#board .group-card').forEach(card => {
@@ -593,7 +593,7 @@ function updateSchoolRanks() {
     const badge = card.querySelector('.school-rank');
     if (rk == null) { if (badge) badge.remove(); return; }
     if (badge) badge.outerHTML = rankBadgeHTML(rk);
-    else (card.querySelector('.group-score-row') || card).insertAdjacentHTML('beforeend', rankBadgeHTML(rk));
+    else card.querySelector('.group-meta')?.insertAdjacentHTML('afterbegin', rankBadgeHTML(rk));
   });
 }
 
@@ -630,11 +630,13 @@ function groupCard(g, ranks) {
     <div class="group-head">
       <span class="dot"></span>
       <span class="gname" title="${esc(g.name)}">${esc(g.name)}</span>
-      <button class="icon-btn drag-handle" drag-gid="${g.id}" title="长按拖拽调整顺序">☰</button>
-      <button class="icon-btn" onclick="renameGroup(${g.id})">✎</button>
-      <button class="icon-btn danger" onclick="delGroup(${g.id})">✕</button>
+      <div class="group-meta">${rankBadge}<div class="group-tools">
+        <button class="icon-btn drag-handle" drag-gid="${g.id}" title="长按拖拽调整顺序" aria-label="调整小组顺序">☰</button>
+        <button class="icon-btn" onclick="renameGroup(${g.id})" title="编辑小组" aria-label="编辑小组">✎</button>
+        <button class="icon-btn danger" onclick="delGroup(${g.id})" title="删除小组" aria-label="删除小组">✕</button>
+      </div></div>
     </div>
-    <div class="group-score-row"><div class="gscore">${g.score}</div>${rankBadge}</div>
+    <div class="group-score-row"><div class="gscore">${g.score}</div></div>
     <div class="quick">
       ${q.map(([v, l]) => `<button class="qbtn ${v > 0 ? 'up' : 'down'}" data-delta="${v}" onclick="addScore(${g.id},${v})">${l}</button>`).join('')}
     </div>
