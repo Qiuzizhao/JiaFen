@@ -21,6 +21,7 @@ const state = {
   dragActive: false,
   pendingRefresh: false,
   leaderboardMode: 'class',
+  leaderboardMetric: 'total',
   leaderboardPeriod: 'current',
   leaderboardMonth: '',
   rewardOpen: false,
@@ -442,6 +443,8 @@ async function api(path, opts = {}) {
 }
 
 function showLogin() {
+  averageRequest++;
+  averageLeaderboard = null;
   startupCheckingEnabled = false;
   clearStartupSnapshot();
   sessionVerified = false;
@@ -553,7 +556,7 @@ function updateSchoolRanks() {
     const badge = card.querySelector('.school-rank');
     if (rk == null) { if (badge) badge.remove(); return; }
     if (badge) badge.outerHTML = rankBadgeHTML(rk);
-    else card.insertAdjacentHTML('beforeend', rankBadgeHTML(rk));
+    else (card.querySelector('.group-score-row') || card).insertAdjacentHTML('beforeend', rankBadgeHTML(rk));
   });
 }
 
@@ -582,7 +585,7 @@ function updateProjectorScores() {
 }
 
 function groupCard(g, ranks) {
-  const q = [[1, '+1'], [2, '+2'], [5, '+5'], [-1, '-1'], [-2, '-2'], [-5, '-5']];
+  const q = [[1, '+1'], [2, '+2'], [3, '+3'], [-1, '-1'], [-2, '-2'], [-3, '-3']];
   const rk = ranks.get(g.id);
   const rankBadge = rk != null ? rankBadgeHTML(rk) : '';
   return `
@@ -594,17 +597,10 @@ function groupCard(g, ranks) {
       <button class="icon-btn" onclick="renameGroup(${g.id})">✎</button>
       <button class="icon-btn danger" onclick="delGroup(${g.id})">✕</button>
     </div>
-    <div class="gscore">${g.score}</div>
+    <div class="group-score-row"><div class="gscore">${g.score}</div>${rankBadge}</div>
     <div class="quick">
       ${q.map(([v, l]) => `<button class="qbtn ${v > 0 ? 'up' : 'down'}" data-delta="${v}" onclick="addScore(${g.id},${v})">${l}</button>`).join('')}
     </div>
-    <div class="custom">
-      <div class="row">
-        <input type="number" id="amount-${g.id}" class="amount" placeholder="分值">
-        <button onclick="applyCustom(${g.id})">记分</button>
-      </div>
-    </div>
-    ${rankBadge}
   </div>`;
 }
 
@@ -638,6 +634,103 @@ function renderBoard() {
 let monthlyLeaderboard = null;
 let monthlyRequest = 0;
 let monthlyRefreshTimer = null;
+let averageLeaderboard = null;
+let averageRequest = 0;
+function writeLeaderboard(el, html) {
+  // Keep unchanged rows alive during polling, SSE updates and scope renders.
+  if (el._leaderboardHTML !== html) { el.innerHTML = html; el._leaderboardHTML = html; }
+  el._leaderboardOwner = state.user?.id;
+  el.classList.remove('lb-loading');
+  el.setAttribute('aria-busy', 'false');
+}
+function loadingLeaderboard(el, message) {
+  // On a cold metric/month switch, retain the row layout but hide old numeric results.
+  // Never retain names from a different account or an unverified startup snapshot.
+  if (!sessionVerified || el._leaderboardOwner !== state.user?.id || !el.querySelector('.lb-item')) {
+    writeLeaderboard(el, '<div class="empty">' + esc(message) + '</div>');
+  }
+  el.classList.add('lb-loading');
+  el.setAttribute('aria-busy', 'true');
+}
+function averageContext() {
+  const period = state.leaderboardPeriod === 'history' ? 'history' : 'month';
+  return { period, month: period === 'month' ? selectedLeaderboardMonth() : null, userId: state.user?.id };
+}
+function sameAverageContext(data, context) {
+  return data && data.userId === context.userId && data.period === context.period && data.month === context.month;
+}
+async function refreshAverageLeaderboard() {
+  const context = averageContext(), version = ++averageRequest;
+  const query = new URLSearchParams({ period: context.period });
+  if (context.month) query.set('month', context.month);
+  try {
+    const data = await api('/api/statistics/averages?' + query);
+    if (version !== averageRequest || !sessionVerified || !sameAverageContext(context, averageContext())) return;
+    averageLeaderboard = { ...data, ...context };
+  } catch (e) {
+    if (version !== averageRequest || !sessionVerified || !sameAverageContext(context, averageContext())) return;
+    averageLeaderboard = sameAverageContext(averageLeaderboard, context) && averageLeaderboard.classes
+      ? { ...averageLeaderboard, refreshError: e.message }
+      : { ...context, error: e.message };
+  }
+  renderLeaderboard();
+}
+function setLeaderboardMetric(metric) {
+  if (state.leaderboardMetric === metric) return;
+  state.leaderboardMetric = metric;
+  averageRequest++;
+  renderLeaderboard();
+  scheduleMonthlyLeaderboardRefresh();
+}
+function formalAverage(item) {
+  const r = item.result;
+  return item.quality?.can_compute && r.average !== null && Number.isFinite(r.average) &&
+    Number.isSafeInteger(r.exact_ratio?.numerator) && Number.isSafeInteger(r.exact_ratio?.denominator) && r.exact_ratio.denominator > 0;
+}
+function compareAverages(a, b) {
+  const validA = formalAverage(a), validB = formalAverage(b);
+  if (!!validA !== !!validB) return validA ? -1 : 1;
+  if (!validA) return 0;
+  const x = a.result.exact_ratio, y = b.result.exact_ratio;
+  const difference = BigInt(x.numerator) * BigInt(y.denominator) - BigInt(y.numerator) * BigInt(x.denominator);
+  return difference > 0n ? -1 : difference < 0n ? 1 : 0;
+}
+function renderAverageLeaderboard(el) {
+  const snapshot = averageLeaderboard;
+  if (!sessionVerified || !sameAverageContext(snapshot, averageContext()) || snapshot.error) {
+    if (sameAverageContext(snapshot, averageContext()) && snapshot.error) writeLeaderboard(el, '<div class="empty">' + esc(snapshot.error + '，稍后自动重试') + '</div>');
+    else loadingLeaderboard(el, '正在同步课均积分…');
+    return;
+  }
+  let items = [];
+  for (const cls of state.classes) {
+    const statistics = snapshot.classes.find(c => c.class_id === cls.id);
+    if (!statistics) continue;
+    if (state.leaderboardMode === 'classes') {
+      items.push({ tag: cls.name, color: cls.groups[0]?.color || '#3b82f6', result: statistics, quality: statistics.quality });
+    } else if (state.leaderboardMode === 'school' || cls.id === state.currentClassId) {
+      for (const g of cls.groups) {
+        const result = statistics.groups.find(row => row.group_id === g.id && !row.removed);
+        if (result) items.push({ tag: state.leaderboardMode === 'school' ? cls.name + ' · ' + g.name : g.name, color: g.color, result, quality: statistics.quality });
+      }
+    }
+  }
+  if (!items.length) { writeLeaderboard(el, '<div class="empty">暂无统计对象</div>'); return; }
+  items.sort(compareAverages);
+  let last = null, rank = 0;
+  writeLeaderboard(el, items.map((item, i) => {
+    const r = item.result, valid = formalAverage(item);
+    if (valid && (!last || compareAverages(last, item))) rank = i + 1;
+    if (valid) last = item;
+    return `<div class="lb-average-entry" data-average-ranked="${!!valid}">
+      <div class="lb-item ${valid && rank <= 3 ? 'rank' + rank : ''}" style="--c:${esc(item.color)}">
+        <span class="rank">${valid ? rank : '—'}</span><span class="dot"></span>
+        <span class="lb-name" title="${esc(item.tag)}">${esc(item.tag)}</span>
+        <span class="lb-score">${valid ? r.average.toFixed(2) + '<small>分/节</small>' : '<small>' + (r.lesson_count ? '待校正' : '无课堂') + '</small>'}</span>
+      </div>
+      </div>`;
+  }).join(''));
+}
 function beijingMonth() {
   const parts = new Intl.DateTimeFormat('en', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit' }).formatToParts(new Date());
   return parts.find(p => p.type === 'year').value + '-' + parts.find(p => p.type === 'month').value;
@@ -649,11 +742,16 @@ function scheduleMonthlyLeaderboardRefresh() {
   if (!sessionVerified || !state.authed) return;
   // Invalidate an in-flight result immediately when newer scoring activity arrives.
   monthlyRequest++;
+  averageRequest++;
+  // Retain a matching snapshot while refreshing; invalidate only in-flight requests.
+  if (state.leaderboardMetric === 'average') $('#leaderboard').setAttribute('aria-busy', 'true');
   clearTimeout(monthlyRefreshTimer);
   monthlyRefreshTimer = setTimeout(refreshMonthlyLeaderboard, 80);
 }
 async function refreshMonthlyLeaderboard() {
-  if (!sessionVerified || !state.authed || state.leaderboardPeriod === 'history') return;
+  if (!sessionVerified || !state.authed) return;
+  if (state.leaderboardMetric === 'average') return refreshAverageLeaderboard();
+  if (state.leaderboardPeriod === 'history') return;
   const month = selectedLeaderboardMonth();
   const userId = state.user?.id;
   const version = ++monthlyRequest;
@@ -688,15 +786,24 @@ function renderLeaderboard() {
   $('#lb-current-btn').setAttribute('aria-pressed', String(state.leaderboardPeriod === 'current'));
   $('#lb-history-btn').setAttribute('aria-pressed', String(cumulative));
   $('#lb-history-btn').classList.toggle('on', cumulative);
-  $('#lb-month').classList.toggle('lb-month-inactive', cumulative);
   $('#lb-month').disabled = cumulative;
-  $('#lb-month').setAttribute('aria-hidden', String(cumulative));
-  $('#lb-month').value = month;
-  $('#lb-history-range').classList.toggle('hidden', !cumulative);
+  if (!cumulative || !$('#lb-month').value) $('#lb-month').value = month;
   $('#lb-basis-hint').textContent = cumulative ? '' : '小组卡片显示累计分';
   $('#lb-period-label').textContent = cumulative ? '累计积分' : `${month.slice(0, 4)}年${Number(month.slice(5))}月 · 净积分`;
+  const averageMetric = state.leaderboardMetric === 'average';
+  $('#lb-total-btn').classList.toggle('on', !averageMetric);
+  $('#lb-average-btn').classList.toggle('on', averageMetric);
+  $('#lb-total-btn').setAttribute('aria-pressed', String(!averageMetric));
+  $('#lb-average-btn').setAttribute('aria-pressed', String(averageMetric));
+  if (averageMetric) {
+    $('#lb-period-label').textContent = (cumulative ? '历史' : `${month.slice(0, 4)}年${Number(month.slice(5))}月`) + ' · 课均积分';
+    $('#lb-basis-hint').textContent = '小组卡片显示累计分';
+    renderAverageLeaderboard(el);
+    return;
+  }
   if (!cumulative && (!sessionVerified || monthlyLeaderboard?.month !== month || monthlyLeaderboard?.userId !== state.user?.id || monthlyLeaderboard.error)) {
-    el.innerHTML = '<div class="empty">' + esc(monthlyLeaderboard?.month === month && monthlyLeaderboard?.userId === state.user?.id && monthlyLeaderboard.error ? monthlyLeaderboard.error + '，稍后自动重试' : '正在同步月度积分…') + '</div>';
+    if (monthlyLeaderboard?.month === month && monthlyLeaderboard?.userId === state.user?.id && monthlyLeaderboard.error) writeLeaderboard(el, '<div class="empty">' + esc(monthlyLeaderboard.error + '，稍后自动重试') + '</div>');
+    else loadingLeaderboard(el, '正在同步月度积分…');
     return;
   }
   let items = [];
@@ -716,15 +823,15 @@ function renderLeaderboard() {
     const cls = getCurrentClass();
     if (cls) items = cls.groups.map(g => ({ ...g, score: monthlyScore(g), tag: g.name }));
   }
-  if (!items.length) { el.innerHTML = `<div class="empty">${empty}</div>`; return; }
+  if (!items.length) { writeLeaderboard(el, `<div class="empty">${empty}</div>`); return; }
   items.sort((a, b) => b.score - a.score);
-  el.innerHTML = items.map((g, i) => `
+  writeLeaderboard(el, items.map((g, i) => `
     <div class="lb-item ${i < 3 ? 'rank' + (i + 1) : ''}" style="--c:${esc(g.color)}">
       <span class="rank">${medals[i] || (i + 1)}</span>
       <span class="dot"></span>
       <span class="lb-name" title="${esc(g.tag)}">${esc(g.tag)}</span>
       <span class="lb-score">${g.score > 0 ? '+' : ''}${g.score}<small>分</small></span>
-    </div>`).join('');
+    </div>`).join(''));
 }
 
 function setLeaderboardMode(mode) {
@@ -948,14 +1055,6 @@ async function addScore(gid, delta, reason = '') {
     setGroupScore(gid, prev);
     alert(e.message);
   }
-}
-function applyCustom(gid) {
-  const amt = $('#amount-' + gid).value.trim();
-  if (!amt) { alert('请输入分值'); return; }
-  const v = parseInt(amt, 10);
-  if (isNaN(v) || v === 0) { alert('请输入有效的分值'); return; }
-  addScore(gid, v);
-  $('#amount-' + gid).value = '';
 }
 // 全班加减分：本班每个小组同时加减同一个分值
 async function addClassScore(delta, reason = '') {
@@ -1372,8 +1471,8 @@ async function syncClassRoster(cid) {
 // 其它设备的改动：能局部更新就局部更新，只有结构性变化才整页重新拉取
 function handleRemoteUpdate(data) {
   if (typeof document !== 'undefined') document.dispatchEvent(new CustomEvent('jiafen:lessons', { detail: data }));
-  if (data.kind === 'lessons') return;
   if (typeof scheduleMonthlyLeaderboardRefresh === 'function') scheduleMonthlyLeaderboardRefresh();
+  if (data.kind === 'lessons') return;
   if (state.rewardOpen && !(data.client && data.client === CLIENT_ID)) refreshRewards();
   if (data.client && data.client === CLIENT_ID) return;   // 自己的改动已本地生效
   if (data.kind === 'archives') {
@@ -2936,7 +3035,10 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   $('#lb-current-btn').addEventListener('click', () => setLeaderboardPeriod('current'));
   $('#lb-history-btn').addEventListener('click', () => setLeaderboardPeriod('history'));
+  $('#lb-total-btn').addEventListener('click', () => setLeaderboardMetric('total'));
+  $('#lb-average-btn').addEventListener('click', () => setLeaderboardMetric('average'));
   $('#lb-month').addEventListener('change', e => {
+    if (state.leaderboardPeriod === 'history') return;
     if (!e.target.value) { renderLeaderboard(); return; }
     state.leaderboardMonth = e.target.value;
     setLeaderboardPeriod('month');
@@ -3105,7 +3207,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // A selected historical month stays fixed; “当月” follows Beijing month boundaries.
 setInterval(() => {
-  if (!document.hidden && state.authed && sessionVerified && state.leaderboardPeriod !== 'history') {
+  if (!document.hidden && state.authed && sessionVerified && (state.leaderboardPeriod !== 'history' || state.leaderboardMetric === 'average')) {
     renderLeaderboard();
     scheduleMonthlyLeaderboardRefresh();
   }

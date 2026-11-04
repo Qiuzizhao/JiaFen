@@ -3,6 +3,7 @@ import json
 from datetime import datetime, timedelta, timezone
 
 BJ = timezone(timedelta(hours=8))
+DEFAULT_WINDOW_MINUTES = 120
 
 
 def stamp(value):
@@ -99,7 +100,9 @@ def new_lesson(db, uid, cid, start, end, source, status="review", note=""):
 
 
 def seed_history(db, uid):
-    """30-minute gaps match the read-only history audit; never apply a live 2h window retroactively."""
+    """Recognize unassigned history per class, using the same gap as live scoring."""
+    setting = db.execute("SELECT window_minutes FROM lesson_settings WHERE owner_id=?", (uid,)).fetchone()
+    gap = timedelta(minutes=setting[0] if setting else DEFAULT_WINDOW_MINUTES)
     rows = db.execute(
         "SELECT m.* FROM monthly_score_entries m LEFT JOIN lesson_entries le ON le.entry_id=m.id "
         "WHERE m.owner_id=? AND m.voided_at IS NULL AND le.entry_id IS NULL ORDER BY m.class_id,m.occurred_at,m.id",
@@ -107,7 +110,7 @@ def seed_history(db, uid):
     clusters = []
     for row in rows:
         if not clusters or row["class_id"] != clusters[-1][-1]["class_id"] or (
-                datetime.fromisoformat(row["occurred_at"]) - datetime.fromisoformat(clusters[-1][-1]["occurred_at"])).total_seconds() > 1800:
+                datetime.fromisoformat(row["occurred_at"]) - datetime.fromisoformat(clusters[-1][-1]["occurred_at"])) > gap:
             clusters.append([])
         clusters[-1].append(row)
     made = []
@@ -294,7 +297,7 @@ def register_lesson_routes(app, get_db, current_user, login_required, own_class,
                        "ON CONFLICT(owner_id) DO UPDATE SET window_minutes=excluded.window_minutes", (uid, value))
             db.commit(); broadcast({"kind": "lessons"})
         row = db.execute("SELECT window_minutes FROM lesson_settings WHERE owner_id=?", (uid,)).fetchone()
-        return jsonify({"window_minutes": row[0] if row else 120})
+        return jsonify({"window_minutes": row[0] if row else DEFAULT_WINDOW_MINUTES})
 
     @app.route("/api/classes/<int:cid>/lessons")
     @login_required

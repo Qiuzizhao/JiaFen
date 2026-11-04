@@ -261,20 +261,21 @@ input.masked { -webkit-text-security: disc; }
   border: 1px solid var(--line);
   border-left: 5px solid var(--c, #5B9BD5);
   border-radius: var(--radius);
-  padding: 14px;
+  padding: 12px;
   min-width: 0;
   background: #fff;
   box-shadow: var(--shadow);
-  display: flex; flex-direction: column; gap: 12px;
+  display: flex; flex-direction: column; gap: 8px;
 }
 .group-head { display: flex; align-items: center; gap: 8px; }
 .group-head .dot { width: 14px; height: 14px; border-radius: 50%; background: var(--c, #5B9BD5); flex: none; }
 .group-head .gname { font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.gscore { font-size: 40px; font-weight: 800; text-align: center; letter-spacing: .5px; }
+.group-score-row { display: flex; align-items: center; gap: 8px; }
+.group-score-row .gscore { flex: 1; min-width: 0; }
+.gscore { font-size: 36px; line-height: 1.2; font-weight: 800; text-align: center; letter-spacing: .5px; }
 .school-rank {
-  position: absolute;
-  right: 12px;
-  bottom: 12px;
+  position: static;
+  flex: none;
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -298,12 +299,6 @@ input.masked { -webkit-text-security: disc; }
 .qbtn.up:hover { background: #d0f0e2; }
 .qbtn.down { background: #fdeef0; color: var(--down-dark); }
 .qbtn.down:hover { background: #fbdcdf; }
-.custom { display: flex; flex-direction: column; gap: 6px; }
-.custom .row { display: flex; gap: 6px; }
-.custom input { flex: 1; min-width: 0; padding: 8px 10px; font-size: 13px; }
-.custom input.amount { width: 70px; flex: none; }
-.custom button { padding: 8px; background: var(--brand); color: #fff; font-weight: 600; border-radius: 8px; }
-.custom button:hover { background: var(--brand-dark); }
 
 /* 排行榜 */
 .leaderboard { display: flex; flex-direction: column; gap: 8px; }
@@ -644,7 +639,6 @@ html { -webkit-text-size-adjust: 100%; }
 .stu-row.flash { animation: stuFlash 3s ease-out 1; }
 @media (max-width: 720px) {
   input, select, textarea { font-size: 16px; }
-  .custom input, .custom input.amount { font-size: 16px; }
   .class-score .cs-custom input { font-size: 16px; }
   /* 班级名单在手机上：收起左侧导航，改成单列 + 更大的点击区 */
   #roster-modal { padding: 8px; }
@@ -716,7 +710,6 @@ html { -webkit-text-size-adjust: 100%; }
   .group-card .group-head .dot { width: 10px; height: 10px; }
   .group-card .group-head .gname { font-size: 14px; }
   .group-card .group-head .icon-btn,
-  .group-card .custom,
   .group-card .school-rank,
   .group-card .quick .qbtn:not([data-delta="1"]):not([data-delta="-1"]) { display: none; }
   .group-card .gscore { padding: 0; font-size: 34px; line-height: 1.1; }
@@ -727,7 +720,7 @@ html { -webkit-text-size-adjust: 100%; }
   .class-score .cs-quick .qbtn { min-width: 0; min-height: 44px; font-size: 15px; }
   .class-score .cs-custom { display: none; }
   .gscore { font-size: 34px; }
-  input, .custom input { font-size: 16px; }
+  input { font-size: 16px; }
   .icon-btn { width: 32px; height: 32px; font-size: 16px; }
   .drag-handle { font-size: 18px; }
   .qbtn { padding: 10px 0; font-size: 15px; }
@@ -1041,11 +1034,11 @@ html { -webkit-text-size-adjust: 100%; }
 }
 
 /* Ranking periods share the existing ranking presentation. */
-.lb-period-controls { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: center; gap: 8px; margin: 12px 0; min-height: 42px; }
-.lb-period-controls .lb-toggle { margin-left: 0; justify-self: start; }
-.lb-period-controls .lb-toggle button { min-width: 48px; }
-.lb-period-controls .lb-month-inactive { visibility: hidden; pointer-events: none; }
-.lb-period-controls input { min-width: 0; width: 100%; padding: 8px; font-size: 13px; }
+.lb-period-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: center; gap: 8px; margin: 0 0 8px; }
+.lb-period-controls .lb-toggle { margin-left: 0; min-width: 0; }
+.lb-period-controls .lb-toggle button { flex: 1; min-width: 0; padding: 6px 8px; }
+.lb-scope-controls { margin: 0 0 10px; width: 100%; }
+.lb-scope-controls button { flex: 1; min-width: 0; padding: 6px 8px; }
 .lb-period-label { margin-bottom: 10px; color: var(--muted); font-size: 12px; }
 .lb-score small { margin-left: 3px; color: var(--muted); font-size: 11px; font-weight: 400; }
 
@@ -1174,12 +1167,17 @@ html { -webkit-text-size-adjust: 100%; }
 }
 .lesson-axis-time { position: absolute; padding: 2px 5px; white-space: nowrap; font-size: 10px; color: var(--muted); pointer-events: none; }
 
-/* Period context remains in place when changing between monthly and cumulative scores. */
-.lb-month-control { position: relative; min-width: 0; }
-#lb-history-range { position: absolute; inset: 0; display: flex; align-items: center; padding: 8px 12px; color: var(--muted); font-size: 13px; background: #f8faff; border: 1px solid var(--line); border-radius: 10px; }
+/* The month stays next to the heading, including when history ignores it. */
+.leaderboard-heading { justify-content: space-between; }
+.leaderboard-heading > span { flex-shrink: 0; }
+.lb-month-control { min-width: 0; flex: 0 1 160px; max-width: calc(100% - 60px); }
+.lb-month-control input { display: block; min-width: 0; width: 100%; padding: 6px 8px; font-size: 12px; font-weight: 400; }
+.lb-month-control input:disabled { background: #f8faff; color: #9ca3af; cursor: default; opacity: 1; }
 .lb-period-caption { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 4px 10px; margin-bottom: 10px; }
 .lb-period-caption .lb-period-label { margin: 0; }
 #lb-basis-hint { color: var(--muted); font-size: 11px; }
+.lb-average-entry { min-width: 0; }
+.leaderboard.lb-loading .rank, .leaderboard.lb-loading .lb-score { visibility: hidden; }
 
 /* Classroom viewing and editing share a stable header and a separate save bar. */
 .lessons-box { display: flex; flex-direction: column; padding: 0; max-height: 90vh; max-height: 90dvh; overflow: hidden; }

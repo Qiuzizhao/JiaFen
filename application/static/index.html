@@ -14,7 +14,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png?v=20260915">
   <link rel="icon" href="/favicon.ico?v=20260915" sizes="any">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=20260915">
-  <link rel="stylesheet" href="/style.css?v=20261102i">
+  <link rel="stylesheet" href="/style.css?v=20261103e">
 </head>
 <body>
 
@@ -105,10 +105,10 @@
           <div class="cs-quick">
             <button class="qbtn up" data-delta="1" onclick="addClassScore(1)">+1</button>
             <button class="qbtn up" data-delta="2" onclick="addClassScore(2)">+2</button>
-            <button class="qbtn up" data-delta="5" onclick="addClassScore(5)">+5</button>
+            <button class="qbtn up" data-delta="3" onclick="addClassScore(3)">+3</button>
             <button class="qbtn down" data-delta="-1" onclick="addClassScore(-1)">-1</button>
             <button class="qbtn down" data-delta="-2" onclick="addClassScore(-2)">-2</button>
-            <button class="qbtn down" data-delta="-5" onclick="addClassScore(-5)">-5</button>
+            <button class="qbtn down" data-delta="-3" onclick="addClassScore(-3)">-3</button>
           </div>
           <div class="cs-custom">
             <input type="number" id="class-amount" class="amount" placeholder="分值">
@@ -121,20 +121,21 @@
       <!-- 右侧：排行 + 记录 -->
       <aside class="right">
         <div class="panel">
-          <div class="panel-head">
-            排行榜
-            <div class="lb-toggle" id="lb-toggle">
-              <button id="lb-class-btn" class="on">全班</button>
-              <button id="lb-school-btn">全校</button>
-              <button id="lb-classes-btn">班级</button>
-            </div>
+          <div class="panel-head leaderboard-heading">
+            <span>排行榜</span>
+            <div class="lb-month-control"><input id="lb-month" type="month" aria-label="选择排行榜月份" min="1900-01" max="9998-12"></div>
           </div>
           <div class="lb-period-controls">
             <div class="lb-toggle" aria-label="排行榜时间">
               <button id="lb-current-btn" class="on" type="button">当月</button>
               <button id="lb-history-btn" type="button">历史</button>
             </div>
-            <div class="lb-month-control"><input id="lb-month" type="month" aria-label="选择排行榜月份" min="1900-01" max="9998-12"><span id="lb-history-range" class="hidden">全部时间</span></div>
+            <div class="lb-toggle" aria-label="排行榜指标"><button id="lb-total-btn" class="on" type="button" aria-pressed="true">总分</button><button id="lb-average-btn" type="button" aria-pressed="false">课均</button></div>
+          </div>
+          <div class="lb-toggle lb-scope-controls" id="lb-toggle" aria-label="排行榜范围">
+            <button id="lb-class-btn" class="on">全班</button>
+            <button id="lb-school-btn">全校</button>
+            <button id="lb-classes-btn">班级</button>
           </div>
           <div class="lb-period-caption"><div id="lb-period-label" class="lb-period-label" aria-live="polite"></div><small id="lb-basis-hint"></small></div>
           <div id="leaderboard" class="leaderboard"></div>
@@ -420,7 +421,7 @@
     <div id="projector-board" class="projector-board"></div>
   </div>
 
-  <script src="/app.js?v=20261102i"></script>
+  <script src="/app.js?v=20261103e"></script>
   <script src="/lessons.js?v=20261102i"></script>
   <script src="/archives.js?v=20261010d"></script>
 </body>

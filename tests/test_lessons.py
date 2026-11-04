@@ -2,6 +2,7 @@ import importlib.util
 from pathlib import Path
 import sqlite3
 import tempfile
+from contextlib import contextmanager
 import unittest
 from datetime import datetime
 
@@ -18,13 +19,22 @@ class LessonTests(unittest.TestCase):
         with self.c.session_transaction() as s: s["uid"] = 1
         self.cid = self.c.post("/api/classes", json={"name": "A班"}).json["id"]
         self.gids = [self.c.post(f"/api/classes/{self.cid}/groups", json={"name": f"第{i}组"}).json["id"] for i in [1, 2]]
-        with sqlite3.connect(m.DB_PATH) as db:
+        with self.database() as db:
             db.executemany("INSERT INTO reward_progress(group_id,max_score) VALUES(?,0)", [(gid,) for gid in self.gids])
         self.at("2026-11-02 08:10:00")
 
     def tearDown(self):
         m.DB_PATH, m.beijing_now = self.old_path, self.old_clock
         self.tmp.cleanup()
+
+    @contextmanager
+    def database(self):
+        db = sqlite3.connect(m.DB_PATH)
+        try:
+            with db:
+                yield db
+        finally:
+            db.close()
 
     def at(self, at):
         m.beijing_now = lambda: datetime.fromisoformat(at + "+08:00")
@@ -44,7 +54,7 @@ class LessonTests(unittest.TestCase):
         return self.c.put(f"/api/lessons/{lesson['id']}", json={"revision": lesson["revision"], "start_at": start, "end_at": end, **extra})
 
     def originals(self):
-        with sqlite3.connect(m.DB_PATH) as db:
+        with self.database() as db:
             return {t: db.execute("SELECT * FROM " + t + " ORDER BY 1").fetchall() for t in [
                 "groups", "transactions", "monthly_score_entries", "reward_opportunities",
                 "reward_progress", "ranking_group_history", "ranking_archives"]}
@@ -121,7 +131,7 @@ class LessonTests(unittest.TestCase):
         self.assertEqual(len(self.lessons()["lessons"]), 1)
         self.assertEqual(self.lessons()["lessons"][0]["summary"]["net"], 3)
         self.assertEqual(before, self.originals())
-        with sqlite3.connect(m.DB_PATH) as db:
+        with self.database() as db:
             actions = [r[0] for r in db.execute("SELECT action FROM lesson_revisions")]
             self.assertIn("split", actions); self.assertIn("merge", actions)
             self.assertEqual(db.execute("SELECT COUNT(*) FROM lesson_entries").fetchone()[0], 2)
@@ -136,27 +146,71 @@ class LessonTests(unittest.TestCase):
         other = m.app.test_client()
         with other.session_transaction() as s: s["uid"] = 999
         self.assertEqual(other.get(f"/api/lessons/{row['id']}").status_code, 401)
-        with sqlite3.connect(m.DB_PATH) as db: db.execute("INSERT INTO users(username,password_hash) VALUES('other','x')")
+        with self.database() as db: db.execute("INSERT INTO users(username,password_hash) VALUES('other','x')")
         with other.session_transaction() as s: s["uid"] = 2
         self.assertEqual(other.get(f"/api/lessons/{row['id']}").status_code, 404)
         self.assertEqual(other.get(f"/api/classes/{self.cid}/lesson-records?start=2026-09-02&end=2026-09-03").status_code, 404)
 
-    def test_history_backfill_idempotent_not_two_hour_merging(self):
+    def test_history_backfill_defaults_to_two_hour_gap_and_is_idempotent(self):
         # Remove only fixture-generated lesson objects; source rows remain intact.
         self.score("2026-09-09 08:10:00", 1)
         self.score("2026-09-09 08:35:00", -1)
         self.score("2026-09-09 09:10:00", 3)
-        with sqlite3.connect(m.DB_PATH) as db:
+        with self.database() as db:
             db.execute("DELETE FROM lesson_entries"); db.execute("DELETE FROM lesson_revisions"); db.execute("DELETE FROM lessons")
             db.execute("UPDATE lesson_settings SET history_seeded=0")
         before = self.originals()
         m.init_db()
         rows = self.lessons("2026-09")["lessons"]
-        self.assertEqual(len(rows), 2)
-        self.assertEqual([r["status"] for r in rows], ["review", "review"])
+        self.assertEqual(len(rows), 1)
+        self.assertEqual([r["status"] for r in rows], ["review"])
+        self.assertEqual((rows[0]["start_at"],rows[0]["end_at"]),("2026-09-09 08:10:00","2026-09-09 09:10:01"))
         self.assertEqual(before, self.originals())
         m.init_db()
-        self.assertEqual(len(self.lessons("2026-09")["lessons"]), 2)
+        self.assertEqual(len(self.lessons("2026-09")["lessons"]), 1)
+
+    def check_two_hour_gap_per_class(self, historical):
+        other = self.c.post('/api/classes', json={'name':'B班'}).json['id']
+        other_group = self.c.post(f'/api/classes/{other}/groups',json={'name':'B组'}).json['id']
+        self.assertEqual(self.c.get('/api/lessons/settings').json['window_minutes'],120)
+        # A 40-minute class, then B an hour after A started. B cannot bridge A's gap.
+        for at,gid in [('08:00:00',self.gids[0]),('08:40:00',self.gids[1]),
+                       ('09:00:00',other_group),('09:40:00',other_group),
+                       ('10:40:00',self.gids[0]),('11:40:00',other_group),('12:40:01',self.gids[0])]:
+            self.score('2026-11-02 '+at,1,gid)
+        before = self.originals()
+        if historical:
+            with self.database() as db:
+                db.execute('DELETE FROM lesson_entries');db.execute('DELETE FROM lesson_revisions');db.execute('DELETE FROM lessons')
+                db.execute('UPDATE lesson_settings SET history_seeded=0')
+            m.init_db()
+        a = self.lessons()['lessons']
+        b = self.c.get(f'/api/classes/{other}/lessons?month=2026-11').json['lessons']
+        self.assertEqual(len(a),2)
+        self.assertEqual(len(b),1)
+        self.assertEqual([(l['start_at'],l['end_at'],l['summary']['net']) for l in a],
+                         [('2026-11-02 08:00:00','2026-11-02 10:40:01',3),('2026-11-02 12:40:01','2026-11-02 12:40:02',1)])
+        self.assertEqual((b[0]['start_at'],b[0]['end_at'],b[0]['summary']['net']),
+                         ('2026-11-02 09:00:00','2026-11-02 11:40:01',3))
+        self.assertEqual(before,self.originals())
+        m.init_db()
+        self.assertEqual([r['id'] for r in self.lessons()['lessons']],[r['id'] for r in a])
+
+    def test_live_two_hour_gap_is_independent_for_interleaved_classes(self):
+        self.check_two_hour_gap_per_class(False)
+
+    def test_historical_two_hour_gap_is_independent_for_interleaved_classes(self):
+        self.check_two_hour_gap_per_class(True)
+
+    def test_history_honors_explicit_interval_instead_of_hardcoded_gap(self):
+        self.c.put('/api/lessons/settings',json={'window_minutes':30})
+        for at in ['08:00:00','08:30:00','09:00:01']:
+            self.score('2026-11-02 '+at,1)
+        with self.database() as db:
+            db.execute('DELETE FROM lesson_entries');db.execute('DELETE FROM lesson_revisions');db.execute('DELETE FROM lessons')
+            db.execute('UPDATE lesson_settings SET history_seeded=0')
+        m.init_db()
+        self.assertEqual(len(self.lessons()['lessons']),2)
 
     def test_new_score_and_undo_invalidate_edit_revision(self):
         self.score("2026-11-02 08:10:00", 1); row = self.lessons()["lessons"][0]
@@ -168,10 +222,10 @@ class LessonTests(unittest.TestCase):
 
     def test_real_september_class_backfill_edit_and_original_logs_retained(self):
         import json
-        fixture = json.loads((Path(__file__).parent / "fixtures/lessons-real-september.json").read_text())
+        fixture = json.loads((Path(__file__).parent / "fixtures/lessons-real-september.json").read_text(encoding="utf-8"))
         while len(self.gids) < 9:
             self.gids.append(self.c.post(f"/api/classes/{self.cid}/groups", json={"name": f"第{len(self.gids)+1}组"}).json["id"])
-        with sqlite3.connect(m.DB_PATH) as db:
+        with self.database() as db:
             db.row_factory = sqlite3.Row
             for t in fixture["transactions"]:
                 db.execute("INSERT INTO transactions(id,group_id,class_id,delta,reason,batch_id,created_at) VALUES(?,?,?,?,?,?,?)",
@@ -197,11 +251,11 @@ class LessonTests(unittest.TestCase):
         self.assertEqual(saved.json["summary"]["net"],expected)
         self.assertNotEqual(expected,row["summary"]["net"])
         self.assertEqual(self.originals(),before)
-        with sqlite3.connect(m.DB_PATH) as db:
+        with self.database() as db:
             self.assertEqual(db.execute("SELECT COUNT(*) FROM transactions").fetchone()[0],53)
 
     def test_old_state_traces_visible_but_not_counted_as_teaching(self):
-        with sqlite3.connect(m.DB_PATH) as db:
+        with self.database() as db:
             for at, score in [("2026-09-01 00:00:00.000",10),("2026-09-02 00:00:00.000",11),("2026-09-02 00:00:05.000",10)]:
                 db.execute("INSERT INTO ranking_group_history(owner_id,group_id,class_id,name,score,sort_order,active,at) VALUES(1,?,?,?, ?,0,1,?)",
                            (self.gids[0],self.cid,"第1组",score,at))
@@ -213,7 +267,7 @@ class LessonTests(unittest.TestCase):
         self.assertEqual(self.lessons("2026-09")["lessons"][0]["summary"]["count"],0)
 
     def test_legacy_batch_at_different_seconds_cannot_be_cut(self):
-        with sqlite3.connect(m.DB_PATH) as db:
+        with self.database() as db:
             for gid, at in zip(self.gids,["2026-11-02 08:00:00","2026-11-02 08:02:00"]):
                 db.execute("INSERT INTO transactions(group_id,class_id,delta,batch_id,created_at) VALUES(?,?,1,'legacy-batch',?)",(gid,self.cid,at))
         before = self.originals()
@@ -231,7 +285,7 @@ class LessonTests(unittest.TestCase):
         if first[:10] != real_now.strftime("%Y-%m-%d"):
             self.skipTest("near midnight")
         self.score(first,1); self.score(last,2)
-        with sqlite3.connect(m.DB_PATH) as db:
+        with self.database() as db:
             db.execute("DELETE FROM lesson_entries");db.execute("DELETE FROM lesson_revisions");db.execute("DELETE FROM lessons")
             db.execute("UPDATE lesson_settings SET history_seeded=0")
         before = self.originals();m.init_db()
@@ -277,17 +331,17 @@ class LessonTests(unittest.TestCase):
     def test_legacy_automatic_window_normalization_preserves_original_data(self):
         self.score("2026-09-01 08:10:00",1)
         row=self.lessons("2026-09")["lessons"][0]
-        with sqlite3.connect(m.DB_PATH) as db:
+        with self.database() as db:
             db.execute("UPDATE lessons SET end_at='2026-09-01 10:10:00' WHERE id=?",(row["id"],))
         before=self.originals()
         m.init_db()
         normalized=self.lessons("2026-09")["lessons"][0]
         self.assertEqual(normalized["end_at"],"2026-09-01 08:10:01")
         self.assertEqual(before,self.originals())
-        with sqlite3.connect(m.DB_PATH) as db:
+        with self.database() as db:
             self.assertEqual(db.execute("SELECT COUNT(*) FROM lesson_revisions WHERE action='normalize_recognition_interval'").fetchone()[0],1)
         m.init_db()
-        with sqlite3.connect(m.DB_PATH) as db:
+        with self.database() as db:
             self.assertEqual(db.execute("SELECT COUNT(*) FROM lesson_revisions WHERE action='normalize_recognition_interval'").fetchone()[0],1)
 
 
