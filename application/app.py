@@ -19,7 +19,7 @@ if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 from lessons import init_lessons, assign_new_scores, touch_lesson_records, register_lesson_routes
 from averages import register_average_routes
-from monthly_rewards import init_monthly_rewards, monthly_settings, record_monthly_rewards, register_monthly_reward_routes, valid_month
+from monthly_rewards import init_monthly_rewards, monthly_settings, record_monthly_rewards, register_monthly_reward_routes, valid_month, valid_months
 DB_DIR = os.path.join(BASE_DIR, "data")
 # 本地测试可以指向另一个库文件，线上不设这个变量就还是原来的位置
 DB_PATH = os.environ.get("JIAFEN_DB_PATH") or os.path.join(DB_DIR, "jiafen.db")
@@ -1272,7 +1272,7 @@ def undo(transaction_id=None):
     u = current_user()
     db.execute("BEGIN IMMEDIATE")
     # Explicit IDs target exactly the visible record; old clients retain latest-operation undo.
-    query = ("SELECT id,group_id,class_id,delta,batch_id FROM transactions "
+    query = ("SELECT id,group_id,class_id,delta,batch_id,created_at FROM transactions "
              "WHERE class_id IN (SELECT id FROM classes WHERE owner_id=?)")
     params = [u["id"]]
     if transaction_id is not None:
@@ -1287,7 +1287,7 @@ def undo(transaction_id=None):
     if t["batch_id"]:
         # 全班加减分：同一批次的记录一起撤销
         rows = db.execute(
-            "SELECT id, group_id, delta FROM transactions WHERE batch_id=? AND class_id=?", (t["batch_id"], t["class_id"]),
+            "SELECT id, group_id, delta, created_at FROM transactions WHERE batch_id=? AND class_id=?", (t["batch_id"], t["class_id"]),
         ).fetchall()
         for r in rows:
             db.execute("UPDATE groups SET score = score - ? WHERE id=?", (r["delta"], r["group_id"]))
@@ -1297,7 +1297,7 @@ def undo(transaction_id=None):
         )
         touch_lesson_records(db, [r["id"] for r in rows])
         db.execute("DELETE FROM transactions WHERE batch_id=? AND class_id=?", (t["batch_id"], t["class_id"]))
-        record_monthly_rewards(db, u["id"], beijing_now(), [r["group_id"] for r in rows])
+        record_monthly_rewards(db, u["id"], beijing_now(), [r["group_id"] for r in rows], periods={r["created_at"][:7] for r in rows})
         db.commit()
         scores = _group_scores(db, [r["group_id"] for r in rows])
         broadcast({"kind": "undo", "client": client, "scores": scores})
@@ -1319,7 +1319,7 @@ def undo(transaction_id=None):
     )
     touch_lesson_records(db, [t["id"]])
     db.execute("DELETE FROM transactions WHERE id=?", (t["id"],))
-    record_monthly_rewards(db, u["id"], beijing_now(), [t["group_id"]])
+    record_monthly_rewards(db, u["id"], beijing_now(), [t["group_id"]], periods=[t["created_at"][:7]])
     db.commit()
     scores = _group_scores(db, [t["group_id"]])
     broadcast({"kind": "undo", "client": client, "scores": scores})
@@ -1667,10 +1667,10 @@ def export_data():
                 "students": [dict(s) for s in students],
             }
         )
-    # version 6：保留当月目标设置与每月发放标记；旧版备份仍可导入。
+    # version 7：保留当月目标的选定月份；旧版备份仍可导入。
     return jsonify(
         {
-            "version": 6,
+            "version": 7,
             "exported_at": datetime.now().isoformat(),
             "reward_step": reward_step_for_user(db, u["id"]),
             "monthly_reward_goal": monthly_settings(db, u["id"]),
@@ -1700,11 +1700,14 @@ def import_data():
         if (not isinstance(goal, dict) or type(goal.get("enabled")) is not bool
                 or type(goal.get("target")) is not int or not 1 <= goal["target"] <= 10000
                 or (goal.get("start_month") is not None and not valid_month(goal["start_month"]))
-                or (goal["enabled"] and not goal.get("start_month"))):
+                or (goal["enabled"] and not goal.get("start_month"))
+                or (goal.get("months") is not None and not valid_months(goal['months']))
+                or (goal["enabled"] and goal.get("months") == [])):
             return jsonify({"error": "备份中的当月目标设置无效"}), 400
-        db.execute('INSERT INTO monthly_reward_settings(owner_id,enabled,target,start_month) VALUES(?,?,?,?) '
-                   'ON CONFLICT(owner_id) DO UPDATE SET enabled=excluded.enabled,target=excluded.target,start_month=excluded.start_month',
-                   (u["id"], int(goal["enabled"]), goal["target"], goal.get("start_month")))
+        db.execute('INSERT INTO monthly_reward_settings(owner_id,enabled,target,start_month,months) VALUES(?,?,?,?,?) '
+                   'ON CONFLICT(owner_id) DO UPDATE SET enabled=excluded.enabled,target=excluded.target,start_month=excluded.start_month,months=excluded.months',
+                   (u["id"], int(goal["enabled"]), goal["target"], goal.get("start_month"),
+                    json.dumps(sorted(set(goal['months']))) if goal.get('months') is not None else None))
     try:
         backup_step = int(data.get("reward_step", 0))
     except (TypeError, ValueError):

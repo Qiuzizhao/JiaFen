@@ -14,7 +14,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png?v=20260915">
   <link rel="icon" href="/favicon.ico?v=20260915" sizes="any">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=20260915">
-  <link rel="stylesheet" href="/style.css?v=20261104e">
+  <link rel="stylesheet" href="/style.css?v=20261104f">
 </head>
 <body>
 
@@ -259,7 +259,10 @@
       <form id="reward-monthly-form" class="reward-settings-form">
         <label class="reward-monthly-switch"><input id="reward-monthly-enabled" type="checkbox">开启当月目标</label>
         <label class="reward-step-row">当月目标 <input id="reward-monthly-target" type="number" min="1" max="10000" step="1" required value="10"> 分</label>
-        <p class="muted reward-settings-note">按当月净积分，每组每月达标奖励一次。</p>
+        <label for="reward-monthly-month" class="reward-month-label">计算月份</label>
+        <div class="reward-month-picker"><input id="reward-monthly-month" type="month" min="1900-01" max="9998-12"><button id="reward-monthly-add" type="button" class="ghost">添加</button></div>
+        <div id="reward-monthly-months" class="reward-months" aria-live="polite"></div>
+        <p class="muted reward-settings-note">仅计算已添加的月份，每组每月达标奖励一次。</p>
         <p id="reward-monthly-error" class="err" role="alert"></p>
         <div class="modal-actions"><button id="reward-monthly-cancel" class="ghost" type="button">取消</button><button id="reward-monthly-save" class="primary" type="submit">保存</button></div>
       </form>
@@ -434,7 +437,7 @@
     <div id="projector-board" class="projector-board"></div>
   </div>
 
-  <script src="/app.js?v=20261104b"></script>
+  <script src="/app.js?v=20261104f"></script>
   <script src="/lessons.js?v=20261102i"></script>
   <script src="/archives.js?v=20261010d"></script>
 </body>

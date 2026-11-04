@@ -79,12 +79,34 @@ function findClassOfGroup(gid) {
 }
 
 let monthlyGoalBusy = false;
+let monthlyGoalMonths = new Set();
+function renderMonthlyGoalMonths() {
+  const disabled = monthlyGoalBusy || !$('#reward-monthly-enabled').checked;
+  $('#reward-monthly-enabled').disabled = monthlyGoalBusy;
+  $('#reward-monthly-target').disabled = disabled;
+  $('#reward-monthly-month').disabled = disabled;
+  $('#reward-monthly-add').disabled = disabled;
+  $('#reward-monthly-months').innerHTML = [...monthlyGoalMonths].sort().map(month =>
+    `<button type="button" class="reward-month-chip" data-month="${esc(month)}" aria-label="移除${esc(month)}" ${disabled ? 'disabled' : ''}>${esc(month.replace('-', '年'))}月 <span aria-hidden="true">×</span></button>`
+  ).join('') || '<span class="muted small">请选择并添加月份</span>';
+}
+function addMonthlyGoalMonth() {
+  if (monthlyGoalBusy) return;
+  const input = $('#reward-monthly-month'), month = input.value;
+  if (!month || !input.checkValidity()) { $('#reward-monthly-error').textContent = '请选择有效的月份'; return; }
+  if (monthlyGoalMonths.size >= 120 && !monthlyGoalMonths.has(month)) { $('#reward-monthly-error').textContent = '最多添加120个月'; return; }
+  monthlyGoalMonths.add(month);
+  $('#reward-monthly-error').textContent = '';
+  renderMonthlyGoalMonths();
+}
 function openMonthlyGoal() {
   if (!state.rewardData) return;
   const goal = state.rewardData.monthly_goal || { enabled: false, target: 10 };
   $('#reward-monthly-enabled').checked = goal.enabled;
   $('#reward-monthly-target').value = goal.target;
-  $('#reward-monthly-target').disabled = !goal.enabled;
+  monthlyGoalMonths = new Set(goal.months || [beijingMonth()]);
+  $('#reward-monthly-month').value = beijingMonth();
+  renderMonthlyGoalMonths();
   $('#reward-monthly-error').textContent = '';
   $('#reward-monthly-modal').classList.remove('hidden');
   $('#reward-monthly-enabled').focus();
@@ -103,16 +125,18 @@ async function saveMonthlyGoal(e) {
     $('#reward-monthly-error').textContent = '请输入 1 到 10000 之间的整数';
     return;
   }
+  if (enabled && !monthlyGoalMonths.size) { $('#reward-monthly-error').textContent = '请至少添加一个计算月份'; return; }
   monthlyGoalBusy = true;
+  renderMonthlyGoalMonths();
   $('#reward-monthly-save').disabled = true;
   $('#reward-monthly-error').textContent = '';
   try {
-    await api('/api/rewards/monthly-goal', { method: 'PUT', body: { enabled, target, client: CLIENT_ID } });
+    await api('/api/rewards/monthly-goal', { method: 'PUT', body: { enabled, target, months: [...monthlyGoalMonths].sort(), client: CLIENT_ID } });
     await refreshRewards();
     monthlyGoalBusy = false;
     closeMonthlyGoal();
   } catch (err) { $('#reward-monthly-error').textContent = err.message; }
-  finally { monthlyGoalBusy = false; $('#reward-monthly-save').disabled = false; }
+  finally { monthlyGoalBusy = false; $('#reward-monthly-save').disabled = false; renderMonthlyGoalMonths(); }
 }
 
 function openRewardSettings() {
@@ -3130,7 +3154,14 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#reward-monthly-close').addEventListener('click', closeMonthlyGoal);
   $('#reward-monthly-cancel').addEventListener('click', closeMonthlyGoal);
   $('#reward-monthly-form').addEventListener('submit', saveMonthlyGoal);
-  $('#reward-monthly-enabled').addEventListener('change', e => { $('#reward-monthly-target').disabled = !e.target.checked; });
+  $('#reward-monthly-enabled').addEventListener('change', renderMonthlyGoalMonths);
+  $('#reward-monthly-add').addEventListener('click', addMonthlyGoalMonth);
+  $('#reward-monthly-months').addEventListener('click', e => {
+    const button = e.target.closest('[data-month]');
+    if (!button || monthlyGoalBusy || !$('#reward-monthly-enabled').checked) return;
+    monthlyGoalMonths.delete(button.dataset.month);
+    renderMonthlyGoalMonths();
+  });
   $('#reward-monthly-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeMonthlyGoal(); });
   $('#reward-settings-close').addEventListener('click', () => closeRewardSettings());
   $('#reward-settings-cancel').addEventListener('click', () => closeRewardSettings());

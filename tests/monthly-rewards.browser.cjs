@@ -25,18 +25,31 @@ test('monthly goal modal, award once, remote scoring and next month', async () =
     assert.equal(await p.isDisabled('#reward-monthly-target'), true);
     await p.check('#reward-monthly-enabled');
     await p.fill('#reward-monthly-target', '3');
+    // Select historical and future months explicitly, with duplicate protection.
+    await p.fill('#reward-monthly-month', '2026-10'); await p.click('#reward-monthly-add');
+    await p.click('#reward-monthly-add');
+    assert.equal(await p.locator('[data-month="2026-10"]').count(), 1);
+    await p.fill('#reward-monthly-month', '2026-12'); await p.click('#reward-monthly-add');
     await p.screenshot({ path: path.join(__dirname, '../desktop/test-output/monthly-goal-modal.png') });
     await p.click('#reward-monthly-save');
     await p.waitForFunction(() => document.querySelector('#reward-monthly-modal').classList.contains('hidden'));
     const monthlyTokens = p.locator('[data-monthly-period="2026-11"]');
     await monthlyTokens.first().waitFor();
     assert.equal(await monthlyTokens.count(), 1);
+    assert.equal(await p.locator('[data-monthly-period="2026-10"]').count(), 1);
+    assert.equal(await p.locator('[data-monthly-period="2026-12"]').count(), 0);
     // Another device scores; the open rewards screen receives the goal award through SSE.
     const score = await q.request.post(url + '/api/score', { data: { group_id: 2, delta: 4 } });
     assert.equal(score.status(), 200);
     await p.waitForFunction(() => document.querySelectorAll('[data-monthly-period="2026-11"]').length===2);
     await p.click('#reward-monthly-open');
     assert.equal(await p.inputValue('#reward-monthly-target'), '3');
+    assert.equal(await p.locator('#reward-monthly-months .reward-month-chip').count(), 3);
+    // Removing a month and cancelling leaves the saved selection intact.
+    await p.click('[data-month="2026-10"]');
+    await p.click('#reward-monthly-cancel');
+    await p.click('#reward-monthly-open');
+    assert.equal(await p.locator('[data-month="2026-10"]').count(), 1);
     await p.click('#reward-monthly-cancel');
     const tid = (await score.json()).transaction_id;
     await q.request.post(url + `/api/transactions/${tid}/undo`);

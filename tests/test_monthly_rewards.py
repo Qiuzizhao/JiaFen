@@ -116,6 +116,57 @@ class MonthlyRewardTests(unittest.TestCase):
         self.assertEqual(self.c.put('/api/rewards/monthly-goal', json={'enabled': 'true', 'target': 10}).status_code, 400)
         self.assertEqual(m.app.test_client().put('/api/rewards/monthly-goal', json={'enabled': True, 'target': 10}).status_code, 401)
 
+    def choose_months(self, months, target=10, enabled=True):
+        r = self.c.put('/api/rewards/monthly-goal', json={'enabled': enabled, 'target': target, 'months': months})
+        self.assertEqual(r.status_code, 200, r.json)
+        return r.json
+
+    def test_explicit_historical_months_and_unselected_month(self):
+        self.at('2026-09-20 10:00:00'); self.score(10)
+        self.at('2026-10-20 10:00:00'); self.score(15)
+        self.at('2026-11-04 10:00:00'); self.score(30)
+        result = self.choose_months(['2026-10', '2026-09', '2026-10'])
+        self.assertEqual(result['months'], ['2026-09', '2026-10'])
+        self.assertEqual({o['monthly_period'] for o in self.awards()}, {'2026-09', '2026-10'})
+        self.score(1)
+        self.assertEqual(len(self.awards()), 2)
+        self.choose_months(['2026-09', '2026-11'])
+        self.assertEqual({o['monthly_period'] for o in self.awards()}, {'2026-09', '2026-10', '2026-11'})
+        self.choose_months(['2026-10', '2026-11'])
+        self.assertEqual(len(self.awards()), 3)
+
+    def test_future_selection_no_early_award_and_disabled_months(self):
+        self.choose_months(['2026-12'])
+        self.score(30)
+        self.assertEqual(self.awards(), [])
+        self.at('2026-12-01 00:00:00'); self.score(10)
+        self.assertEqual([o['monthly_period'] for o in self.awards()], ['2026-12'])
+        self.choose_months(['2027-01'])
+        self.at('2027-01-01 00:00:00'); self.score(10)
+        self.assertEqual(len(self.awards()), 2)
+        self.at('2027-02-01 00:00:00'); self.score(10)
+        self.assertEqual(len(self.awards()), 2)
+
+    def test_selected_months_backup_and_empty_validation(self):
+        self.choose_months(['2026-09', '2026-11'])
+        self.score(10)
+        backup = self.c.get('/api/export').json
+        self.assertEqual(backup['monthly_reward_goal']['months'], ['2026-09', '2026-11'])
+        self.assertEqual(self.c.post('/api/import', json=backup).status_code, 200)
+        self.assertEqual(self.c.get('/api/rewards/monthly-goal').json['months'], ['2026-09', '2026-11'])
+        for months in [[], ['2026-13'], ['0000-01'], ['9999-12'], '2026-11', [None], ['2026-11'] * 121]:
+            r = self.c.put('/api/rewards/monthly-goal', json={'enabled': True, 'target': 10, 'months': months})
+            self.assertEqual(r.status_code, 400)
+        self.choose_months([], enabled=False)
+        self.assertEqual(len(self.awards()), 1)
+
+    def test_undo_negative_in_selected_historical_month(self):
+        self.at('2026-09-20 10:00:00'); self.score(10); tid = self.score(-5)
+        self.at('2026-11-04 10:00:00'); self.choose_months(['2026-09'])
+        self.assertEqual(self.awards(), [])
+        self.assertEqual(self.c.post(f'/api/transactions/{tid}/undo').status_code, 200)
+        self.assertEqual([o['monthly_period'] for o in self.awards()], ['2026-09'])
+
 
 if __name__ == '__main__':
     unittest.main()
