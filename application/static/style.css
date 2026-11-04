@@ -195,6 +195,10 @@ input.masked { -webkit-text-security: disc; }
 @media (min-width: 721px) and (max-width: 1100px) {
   .right { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .right .panel { min-width: 0; }
+  .right .history-panel { display: flex; flex-direction: column; min-height: 0; }
+  .right .history-panel > .panel-head { flex: none; }
+  .right .history-panel > .history { flex: 1 1 0; height: 0; min-height: 0; max-height: none; }
+  .right .history-panel .hist-item { flex-shrink: 0; }
 }
 
 .sidebar, .right .panel, .main {
