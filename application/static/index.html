@@ -14,7 +14,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png?v=20260915">
   <link rel="icon" href="/favicon.ico?v=20260915" sizes="any">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=20260915">
-  <link rel="stylesheet" href="/style.css?v=20261104g">
+  <link rel="stylesheet" href="/style.css?v=20261105a">
 </head>
 <body>
 
@@ -258,9 +258,15 @@
     <div class="modal-box site-settings-box">
       <div class="modal-head"><h3 id="site-settings-title">设置</h3><button id="site-settings-close" class="icon-btn" type="button" aria-label="关闭">✕</button></div>
       <form id="site-settings-form">
-        <label for="average-start-date">课均统计起始日期</label>
-        <div class="site-settings-date"><input id="average-start-date" type="date" min="1900-01-01" max="9998-12-31"><button id="average-start-clear" type="button" class="ghost">不限</button></div>
-        <p class="muted small">从所选日期当天开始统计课堂与积分，留空则统计全部日期。</p>
+        <section class="site-settings-section" aria-labelledby="average-settings-title">
+          <h4 id="average-settings-title">课均统计</h4>
+          <div class="site-settings-range" role="group" aria-label="课均统计范围">
+            <button id="average-start-clear" type="button" aria-pressed="true">全部日期</button>
+            <button id="average-start-specific" type="button" aria-pressed="false">指定日期</button>
+          </div>
+          <div class="site-settings-date"><input id="average-start-date" aria-label="课均统计起始日期" type="date" min="1900-01-01" max="9998-12-31" aria-describedby="average-settings-hint"></div>
+          <p id="average-settings-hint" class="site-settings-hint">使用全部已登记课堂与积分。</p>
+        </section>
         <p id="site-settings-error" class="err" role="alert"></p>
         <div class="modal-actions"><button id="site-settings-cancel" class="ghost" type="button">取消</button><button id="site-settings-save" class="primary" type="submit">保存</button></div>
       </form>
@@ -450,7 +456,7 @@
     <div id="projector-board" class="projector-board"></div>
   </div>
 
-  <script src="/app.js?v=20261104g"></script>
+  <script src="/app.js?v=20261105a"></script>
   <script src="/lessons.js?v=20261102i"></script>
   <script src="/archives.js?v=20261010d"></script>
 </body>

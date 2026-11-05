@@ -34,10 +34,17 @@ test('account settings date, average recalculation, real two-page SSE and respon
     }
     for (const page of [p,q]) { await page.click('#lb-history-btn'); await page.click('#lb-average-btn'); await firstScore(page, '5.00分/节'); }
     await p.click('#btn-settings');
-    await p.waitForFunction(()=>!document.querySelector('#average-start-date').disabled);
+    await p.waitForFunction(()=>!document.querySelector('#site-settings-save').disabled);
     assert.equal(await p.inputValue('#average-start-date'), '');
+    assert.equal(await p.isDisabled('#average-start-date'), true);
+    await p.click('#average-start-specific');
     await p.fill('#average-start-date','2026-11-01');
-    await p.screenshot({ path: path.join(__dirname,'../desktop/test-output/site-settings-date.png') });
+    await p.click('#average-start-clear');
+    assert.equal(await p.isDisabled('#average-start-date'), true);
+    await p.click('#average-start-specific');
+    assert.equal(await p.inputValue('#average-start-date'), '2026-11-01');
+    await p.click('#average-settings-title');
+    await p.locator('.site-settings-box').screenshot({ path: path.join(__dirname,'../desktop/test-output/site-settings-refined.png') });
     await p.click('#site-settings-save');
     await p.waitForFunction(()=>document.querySelector('#site-settings-modal').classList.contains('hidden'));
     await firstScore(p,'3.00分/节'); await firstScore(q,'3.00分/节');

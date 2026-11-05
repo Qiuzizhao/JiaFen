@@ -467,14 +467,21 @@ body.modal-open { overflow: hidden; }
   width: min(380px, 100%);
 }
 .modal-box h3 { margin: 0 0 10px; font-size: 18px; }
-.site-settings-box .modal-head h3 { margin: 0; }
-.site-settings-box form > label { display: block; margin: 24px 0 10px; font-size: 14px; font-weight: 600; }
-.site-settings-date { display: flex; gap: 8px; margin-bottom: 12px; }
-.site-settings-date input { flex: 1; min-width: 0; width: 100%; font-size: 16px; }
-.site-settings-date button { flex: none; }
+.site-settings-box { width: min(360px, 100%); padding: 20px; }
+.site-settings-box .modal-head h3 { margin: 0; font-size: 18px; }
+.site-settings-box .modal-head .icon-btn { width: 28px; height: 28px; }
+.site-settings-section { margin-top: 18px; padding: 14px; border: 1px solid #edf0f6; border-radius: 12px; background: #f7f9fc; }
+.site-settings-section h4 { margin: 0 0 12px; font-size: 14px; font-weight: 600; }
+.site-settings-range { display: flex; gap: 3px; padding: 3px; border-radius: 9px; background: #e9edf5; margin-bottom: 12px; }
+.site-settings-range button { flex: 1; padding: 7px 4px; background: transparent; color: var(--muted); border-radius: 7px; font-size: 13px; }
+.site-settings-range button[aria-pressed="true"] { background: #fff; color: var(--text); font-weight: 600; box-shadow: 0 1px 3px #1f293715; }
+.site-settings-date input { display: block; min-width: 0; width: 100%; height: 40px; padding: 8px 10px; border-radius: 8px; background: #fff; font-size: 16px; }
+.site-settings-date input:disabled { background: #f0f3f8; color: #9aa3b2; cursor: default; }
+.site-settings-box .site-settings-hint { margin: 10px 0 0; font-size: 12px; line-height: 1.5; color: var(--muted); }
 .site-settings-box .err:empty { display: none; }
-.site-settings-box .small { font-size: 12px; }
-.site-settings-box .modal-actions { margin-top: 20px; }
+.site-settings-box .modal-actions { margin-top: 16px; gap: 8px; }
+.site-settings-box .modal-actions button { flex: none; min-width: 76px; min-height: 36px; padding: 8px 18px; font-size: 13px; border-radius: 8px; }
+.site-settings-box .modal-actions .primary { min-width: 96px; }
 .modal-box p { margin: 0 0 12px; color: var(--muted); font-size: 14px; line-height: 1.5; }
 .modal-box input[type="password"] { width: 100%; margin: 6px 0 10px; }
 .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 8px; }

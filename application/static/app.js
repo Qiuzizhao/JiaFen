@@ -80,13 +80,35 @@ function findClassOfGroup(gid) {
 
 let siteSettingsBusy = false;
 let siteSettingsRequest = 0;
+let siteSettingsLoaded = false;
+let siteSettingsSpecific = false;
+let siteSettingsDateDraft = '';
+function renderSiteSettingsRange() {
+  const disabled = !siteSettingsLoaded || siteSettingsBusy;
+  $('#average-start-clear').disabled = disabled;
+  $('#average-start-specific').disabled = disabled;
+  $('#average-start-clear').setAttribute('aria-pressed', String(!siteSettingsSpecific));
+  $('#average-start-specific').setAttribute('aria-pressed', String(siteSettingsSpecific));
+  $('#average-start-date').disabled = disabled || !siteSettingsSpecific;
+  $('#average-start-date').required = siteSettingsSpecific;
+  $('#average-settings-hint').textContent = siteSettingsSpecific ? '从所选日期当天开始计算课堂与积分。' : '使用全部已登记课堂与积分。';
+}
+function setSiteSettingsRange(specific) {
+  if (!siteSettingsLoaded || siteSettingsBusy) return;
+  if ($('#average-start-date').value) siteSettingsDateDraft = $('#average-start-date').value;
+  siteSettingsSpecific = specific;
+  $('#average-start-date').value = specific ? siteSettingsDateDraft || beijingMonth() + '-01' : '';
+  renderSiteSettingsRange();
+}
 async function openSiteSettings() {
   closeBackupMenu();
   const version = ++siteSettingsRequest;
   $('#site-settings-error').textContent = '';
   $('#average-start-date').value = '';
-  $('#average-start-date').disabled = true;
-  $('#average-start-clear').disabled = true;
+  siteSettingsLoaded = false;
+  siteSettingsSpecific = false;
+  siteSettingsDateDraft = '';
+  renderSiteSettingsRange();
   $('#site-settings-save').disabled = true;
   $('#site-settings-modal').classList.remove('hidden');
   $('#site-settings-close').focus();
@@ -94,10 +116,11 @@ async function openSiteSettings() {
     const data = await api('/api/settings');
     if (version !== siteSettingsRequest) return;
     $('#average-start-date').value = data.average_start_date || '';
-    $('#average-start-date').disabled = false;
-    $('#average-start-clear').disabled = false;
+    siteSettingsDateDraft = data.average_start_date || '';
+    siteSettingsSpecific = !!data.average_start_date;
+    siteSettingsLoaded = true;
+    renderSiteSettingsRange();
     $('#site-settings-save').disabled = false;
-    $('#average-start-date').focus();
   } catch (err) { if (version === siteSettingsRequest) $('#site-settings-error').textContent = err.message; }
 }
 function closeSiteSettings() {
@@ -116,6 +139,7 @@ async function saveSiteSettings(e) {
   e.preventDefault();
   if (siteSettingsBusy || $('#site-settings-save').disabled) return;
   siteSettingsBusy = true;
+  renderSiteSettingsRange();
   $('#site-settings-save').disabled = true;
   $('#site-settings-error').textContent = '';
   const version = siteSettingsRequest;
@@ -126,7 +150,7 @@ async function saveSiteSettings(e) {
     siteSettingsBusy = false;
     closeSiteSettings();
   } catch (err) { if (version === siteSettingsRequest) $('#site-settings-error').textContent = err.message; }
-  finally { siteSettingsBusy = false; $('#site-settings-save').disabled = false; }
+  finally { siteSettingsBusy = false; $('#site-settings-save').disabled = false; renderSiteSettingsRange(); }
 }
 
 let monthlyGoalBusy = false;
@@ -3208,7 +3232,8 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#site-settings-close').addEventListener('click', closeSiteSettings);
   $('#site-settings-cancel').addEventListener('click', closeSiteSettings);
   $('#site-settings-form').addEventListener('submit', saveSiteSettings);
-  $('#average-start-clear').addEventListener('click', () => { $('#average-start-date').value = ''; });
+  $('#average-start-clear').addEventListener('click', () => setSiteSettingsRange(false));
+  $('#average-start-specific').addEventListener('click', () => setSiteSettingsRange(true));
   $('#site-settings-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeSiteSettings(); });
   $('#reward-monthly-open').addEventListener('click', openMonthlyGoal);
   $('#reward-monthly-close').addEventListener('click', closeMonthlyGoal);
